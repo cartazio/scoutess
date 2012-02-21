@@ -2,6 +2,8 @@
 
 The *scoutess* project aims at providing the Haskell community a powerful and viable build bot with a few key services like dependency tracking, on-commit build testing, nightly builds with handling of multiple GHC versions (and dependency versions?), report generation, etc. 
 
+The "clean" build process will be discussed on a separate page: [Build Process]().
+
 # Plan/ideas
 
 ## List of services we want to implement
