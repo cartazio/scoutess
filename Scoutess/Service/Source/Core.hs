@@ -36,17 +36,17 @@ data SourceInfo = SourceInfo
     deriving (Eq, Read, Show, Typeable)
 
 -- | type for errors this service might encounter
-data SourceError 
+data SourceException 
     = SourceErrorOther Text
     | SourceErrorUnknown
     deriving (Eq, Ord, Read, Show, Data, Typeable)
 
-instance Error SourceError where
+instance Error SourceException where
     noMsg    = SourceErrorUnknown
     strMsg s = SourceErrorOther (Text.pack s)
     
 -- | return a human readable error message
-sourceErrorMsg :: SourceError  -- ^ error
+sourceErrorMsg :: SourceException  -- ^ error
                -> Text         -- ^ error message
 sourceErrorMsg (SourceErrorOther txt) = txt
 sourceErrorMsg (SourceErrorUnknown)   = "unknown source error"
