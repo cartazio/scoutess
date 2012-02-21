@@ -2,7 +2,13 @@
 
 The *scoutess* project aims at providing the Haskell community a powerful and viable build bot with a few key services like dependency tracking, on-commit build testing, nightly builds with handling of multiple GHC versions (and dependency versions?), report generation, etc. 
 
+## Build Process
 The "clean" build process will be discussed on a separate page: [Build Process]().
+
+## Handling the dependencies
+
+- We should track the dependencies and whenever a newer version is up on hackage, we should try building the project with the newer version. This is part of the "try building and installing the project as if you were on a fresh Haskell-Platform install" plan.
+- Would it be worth it to have an optional service that would try building the project with the dependencies' HEAD versions, when they're available?
 
 # Plan/ideas
 
