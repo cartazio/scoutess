@@ -10,11 +10,17 @@ The "clean" build process will be discussed on a separate page: [Build Process](
 - We should track the dependencies and whenever a newer version is up on hackage, we should try building the project with the newer version. This is part of the "try building and installing the project as if you were on a fresh Haskell-Platform install" plan.
 - Would it be worth it to have an optional service that would try building the project with the dependencies' HEAD versions, when they're available?
 
+## Reports
+
+- On the short term, the plan is to export the reports as JSON data, and POSTing it to a URL. On the long term, we would most likely provide several export formats (database, xml, etc.).
+
+
 # Plan/ideas
 
 ## List of services we want to implement
 - Checking if dependencies are out-of-date
-- Reporting commits on IRC
+- Reporting commits on IRC (this is mainly handled by the acid-bot project -- we just have to add a part that watches for commits on the repository)
+- Reporting build results on IRC (same as above but replacing the commits by the scoutess reports)
 - On-commit builds
 - Nightly builds
 - Report generation/posting
