@@ -37,8 +37,7 @@ data SourceInfo = SourceInfo
 
 -- | type for errors this service might encounter
 data SourceError 
-    = SourceError
-    | SourceErrorOther Text
+    = SourceErrorOther Text
     | SourceErrorUnknown
     deriving (Eq, Ord, Read, Show, Data, Typeable)
 
