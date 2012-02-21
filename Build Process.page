@@ -1,0 +1,7 @@
+- The build process (may it be triggered by a commit, or just run as a nightly task) should happen in a clean environment, simulating a fresh Haskell Platform environment, thus only having Cabal (and cabal-install) and GHC together with their dependencies.
+- We're currently investigating how the isolation will be performed: hsenv, virthualenv or just cabal-dev.
+- It should be able to fetch packages either from Hackage or from repositories (darcs for sure, and probably git too -- darcs-bridge?).
+- It should test building the package by only fetching (when possible) the dependencies from hackage, just like it would happen if someone was trying to install your project -- e.g, we would fetch hslogger from hackage if trying to build happstack-server.
+- Maybe we should also try to build the project with the HEAD versions of the dependencies (if we specify a repo for them)? That would thus let the developer of the project anticipate some breakages with upcoming versions of the project's dependencies.
+
+Basically, we may have to do some distinction between a pure "Testing" mode, that would only try building against the hackage versions of the dependencies, and a kind of "Advanced testing" mode that would fetch the development versions of the dependencies from their repositories. The former would be perfect for on-commit builds and for nightly builds, while the latter would only make sense for nightly/weekly builds, for example.
