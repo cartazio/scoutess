@@ -12,5 +12,5 @@ fetchDarcs :: SourceConfig -- ^ 'SourceConfig'
            -> Text         -- ^ location of darcs repo (e.g. @http:\/\/example.org\/repo@, @ssh:\/\/user\@example.org/srv/darcs/repo@)
            -> Maybe Text   -- ^ optional darcs tag
            -> m (Either SourceException SourceInfo)
-fetchDarcs location tag =
+fetchDarcs sourceConfig location tag =
     undefined
