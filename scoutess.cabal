@@ -23,12 +23,15 @@ Library
                      Scoutess.Service.Source.Fetch
                      Scoutess.Service.Source.Core
   Build-Depends:     
-                     base     < 5,
-                     aeson    == 0.6.*,
-                     Cabal    == 1.14.*,
-                     mtl      == 2.0.*,
-                     packdeps == 0.3.*,
-                     text     == 0.11.*
+                     base      < 5,
+                     aeson     == 0.6.*,
+                     Cabal     == 1.14.*,
+                     mtl       == 2.0.*,
+                     packdeps  == 0.3.*,
+                     text      == 0.11.*,
+		     filemanip == 0.3.*,
+		     zlib      == 0.5.*,
+		     tar       == 0.4.*
 
 Executable scoutess
   Main-is: Main.hs
