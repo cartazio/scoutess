@@ -32,9 +32,10 @@ findCabalFiles = find recPred (extension ==? ".cabal")
   where recPred = (`notElem` ["_darcs", ".git", "src", "tests", "test", "examples", "Data", "Control", "data"]) `liftM` fileName
         
 -- | compresses all the cabal files in a tar archive, keeping the diretory tree structure
---   the base directory filepath must have an ending "/" (for now)
 tarCabalFiles :: [FilePath] -- ^ list of cabal files
               -> FilePath   -- ^ base directory
               -> FilePath   -- ^ file path for the output tar file
               -> IO ()
-tarCabalFiles cabals baseDir output = Tar.create output baseDir $ map (drop (length baseDir)) cabals 
+tarCabalFiles cabals baseDir output = Tar.create output baseDir $ map (drop n) cabals 
+  where n = let l = length baseDir in
+            if last baseDir == '/' then l else l+1  
