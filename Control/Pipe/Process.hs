@@ -1,13 +1,15 @@
 -- | a (currently broken) 'Pipe' interface to 'runInteractiveProcess'
-module Control.Pipes.Process where
+module Control.Pipe.Process where
 
 import Control.Concurrent (killThread, forkIO)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
+import Control.Concurrent.MVar
 import Control.Monad
 import Control.Monad.Trans
 import Control.Pipe
+import Control.Pipe.Binary (handleWriter)
 import Data.ByteString (ByteString, empty, hGetSome, hPut)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
@@ -90,3 +92,61 @@ test =
     (forever $ yield (C.pack "foo\n")) >+>
     (process "/bin/cat" [] Nothing Nothing >>= \ec -> lift $ print ec) >+>
     (forever $ (lift . either C.putStr C.putStr ) =<< await)
+
+
+
+process2 :: (MonadIO m) =>
+           FilePath                 -- ^ path to executable
+        -> [String]                 -- ^ arguments to pass to executable
+        -> Maybe String             -- ^ optional working directory
+        -> Maybe [(String, String)] -- ^ optional environment (otherwise inherit)
+        -> m (Consumer ByteString IO (), Producer (Either ByteString ByteString) IO ExitCode)
+process2 executable args wd env =
+    do action <- liftIO $ atomically newTChan
+       (inh, outh, errh, proch) <- liftIO $ runInteractiveProcess executable args wd env
+       let inputPipe = handleWriter inh
+           outputPipe =
+             do tids <- lift $ 
+                      do outTid <- forkIO $ forever $
+                            do b <- hGetSome outh 100
+                               atomically $ writeTChan action (Stdout b)
+                         errTid <- forkIO $ forever $
+                            do b <- hGetSome errh 100
+                               atomically $ writeTChan action (Stderr b)
+                         termTid <- forkIO $
+                            do ec <- waitForProcess proch
+                               atomically $ writeTChan action (Terminated ec)
+                         return [outTid, errTid, termTid]
+
+
+                ec <- go action
+                lift $ mapM_ killThread tids
+                return ec
+       return (inputPipe, outputPipe)
+
+    where
+      go :: TChan IOAction -> Producer (Either ByteString ByteString) IO ExitCode
+      go action =
+          do a <- lift $ atomically $ readTChan action
+             case a of
+               (Stdout b) ->
+                   do yield (Right b)
+                      go action
+               (Stderr b) ->
+                   do yield (Left b)
+                      go action
+               (Terminated ec) ->
+                   do return ec
+               InputReady ->
+                   do go action
+               _          ->
+                   do go action
+
+test2 :: IO ()
+test2 = 
+    do (procIn, procOut) <- process2 "/bin/cat" [] Nothing Nothing
+       done <- newEmptyMVar
+       forkIO $ runPipe $ (replicateM_ 10 $ yield (C.pack "foo\n")) >+> procIn
+       forkIO $ runPipe $ (procOut >>= \ec -> lift ( print ec >> putMVar done ())) >+> (forever $ (lift . either C.putStr C.putStr ) =<< await)
+       readMVar done
+       return ()
