@@ -1,15 +1,17 @@
-{-# LANGUAGE DeriveDataTypeable, OverloadedStrings #-}
--- | This service is used to fetch the source for a cabal package, get changelogs (when possible), and finding out if there are changes since last time
+{-# LANGUAGE DeriveDataTypeable, OverloadedStrings, TemplateHaskell #-}
+-- | This service is used to fetch the source for a cabal package, get changelogs (when possible), and finding out if there are changes since last time.
 module Scoutess.Service.Source.Core where
 
 import Control.Monad.Error             (Error(..))
+import Control.Exception               (Exception)
 import Data.Data                       (Data, Typeable)
+import Data.SafeCopy                   (SafeCopy(..), base, deriveSafeCopy)
 import Data.Text                       (Text)
 import qualified Data.Text             as Text
 import Distribution.PackageDescription (PackageDescription)
 
 data SourceConfig = SourceConfig
-    { srcCacheDir :: FilePath -- ^ path to directory that holds retrieved sourceg
+    { srcCacheDir :: FilePath -- ^ path to directory that holds retrieved source
     }
     deriving (Eq, Ord, Read, Show, Data, Typeable)
 
@@ -27,6 +29,8 @@ data SourceLocation
     | Uri Text (Maybe Text)               -- ^ get source as @.tar.gz@ from uri (optional md5sum checksum)
     deriving (Read, Show, Eq, Ord, Data, Typeable)
 
+$(deriveSafeCopy 0 'base ''SourceLocation)
+
 -- | Information about source which has been fetched an is locally available now
 data SourceInfo = SourceInfo
     { srcPath               :: FilePath           -- ^ path to the directory that contains the .cabal file
@@ -35,15 +39,29 @@ data SourceInfo = SourceInfo
     }
     deriving (Eq, Read, Show, Typeable)
 
+instance SafeCopy PackageDescription where
+    getCopy = undefined
+    putCopy = undefined
+
+$(deriveSafeCopy 0 'base ''SourceInfo)
+
 -- | type for errors this service might encounter
+--
+-- should this be an 'Exception' or just an 'Error'?
+--
+-- Do we need to include the 'SourceLocation' in the error?
 data SourceException 
     = SourceErrorOther Text
     | SourceErrorUnknown
     deriving (Eq, Ord, Read, Show, Data, Typeable)
 
+$(deriveSafeCopy 0 'base ''SourceException)
+
 instance Error SourceException where
     noMsg    = SourceErrorUnknown
     strMsg s = SourceErrorOther (Text.pack s)
+
+instance Exception SourceException
     
 -- | return a human readable error message
 sourceErrorMsg :: SourceException  -- ^ error
