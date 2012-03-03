@@ -20,7 +20,7 @@ data Diffs = Diffs
 $(deriveSafeCopy 0 'base ''Diffs)
 
 data BuildReport = BuildReport {
-      sourceResults :: [Either SourceException SourceInfo]
+      sourceResults :: ([SourceException], [SourceInfo])
     , diffs         :: [Diffs] -- ^ would be nice to get some sort of 'diffs' that show exactly what changed in the source between two builds
     }
     deriving (Eq, Read, Show, Typeable)
