@@ -7,6 +7,8 @@ import qualified Codec.Compression.GZip as GZ
 import qualified Data.ByteString.Lazy as L
 import System.FilePath.Find (always, find, fileName, extension, (==?))
 
+import Scoutess.Utils.Archives
+
 -- | generates a package index from a list of package archives
 generateIndex :: [FilePath] -- ^ list of .tar.gz files for packages
               -> FilePath   -- ^ directory in which packages should be extracted
@@ -21,9 +23,7 @@ generateIndex archives pkgsDir pkgFile = do
 extractArchives :: [FilePath] -- ^ list of package archives (.tar.gz)
                 -> FilePath   -- ^ output directory
                 -> IO ()
-extractArchives archives dir = mapM_ f archives
-  where f archive = L.readFile archive >>=
-                    Tar.unpack dir . Tar.read . GZ.decompress
+extractArchives archives dir = mapM_ (flip extractArchive dir) archives 
                     
 -- | looks for all .cabal files in the provided directory and its subdirectories
 findCabalFiles :: FilePath -- ^ where to start looking (recursively)
@@ -36,6 +36,4 @@ tarCabalFiles :: [FilePath] -- ^ list of cabal files
               -> FilePath   -- ^ base directory
               -> FilePath   -- ^ file path for the output tar file
               -> IO ()
-tarCabalFiles cabals baseDir output = Tar.create output baseDir $ map (drop n) cabals 
-  where n = let l = length baseDir in
-            if last baseDir == '/' then l else l+1  
+tarCabalFiles = tarFiles

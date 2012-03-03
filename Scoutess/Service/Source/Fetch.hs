@@ -5,7 +5,7 @@ import Control.Monad.Trans             (MonadIO(..))
 import Data.Either                     (partitionEithers)
 import Scoutess.Service.Source.Core    (SourceConfig, SourceException, SourceInfo, SourceLocation(..))
 import Scoutess.Service.Source.Darcs   (fetchDarcs)
-
+import Scoutess.Service.Source.Hackage (fetchHackage)
 
 -- | fetch the source
 --
@@ -34,6 +34,7 @@ fetchSrc :: (MonadIO m) =>
 fetchSrc sourceConfig sourceLocation =
     case sourceLocation of
       (Darcs location mTag) -> fetchDarcs sourceConfig location mTag
+      (Hackage pkg mVer)    -> fetchHackage sourceConfig pkg mVer
 
 -- | fetch multiple 'SourceLocation's
 --
