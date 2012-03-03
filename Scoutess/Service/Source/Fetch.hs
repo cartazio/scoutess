@@ -1,6 +1,8 @@
 module Scoutess.Service.Source.Fetch where
 
+import Control.Monad                   (liftM)
 import Control.Monad.Trans             (MonadIO(..))
+import Data.Either                     (partitionEithers)
 import Scoutess.Service.Source.Core    (SourceConfig, SourceException, SourceInfo, SourceLocation(..))
 import Scoutess.Service.Source.Darcs   (fetchDarcs)
 
@@ -25,10 +27,22 @@ import Scoutess.Service.Source.Darcs   (fetchDarcs)
 --
 -- Also, it makes it easier to attempt to fetch all the sources, even
 -- if some fail.
-fetch :: (MonadIO m) =>
-         SourceConfig
-      -> SourceLocation -- ^ spec for where to find the source
-      -> m (Either SourceException SourceInfo)
-fetch sourceConfig sourceLocation =
+fetchSrc :: (MonadIO m) =>
+            SourceConfig
+         -> SourceLocation -- ^ spec for where to find the source
+         -> m (Either SourceException SourceInfo)
+fetchSrc sourceConfig sourceLocation =
     case sourceLocation of
       (Darcs location mTag) -> fetchDarcs sourceConfig location mTag
+
+-- | fetch multiple 'SourceLocation's
+--
+-- This function will attempt to fetch as many sources as it
+-- can. Failures are reported in first element of the tuple, successes
+-- in the second element.
+fetchSrcs :: (MonadIO m) =>
+             SourceConfig
+          -> [SourceLocation] -- ^ spec for where to find the source
+          -> m ([SourceException], [SourceInfo])
+fetchSrcs sourceConfig sourceLocations =
+    liftM partitionEithers $ mapM (fetchSrc sourceConfig) sourceLocations

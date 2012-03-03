@@ -1,5 +1,5 @@
 -- | This service is used to have a sort of local hackage-like package index, which basically means maintaining a package index containing the dependencies
-module Scoutess.Service.CabalProxy.Core where
+module Scoutess.Service.LocalHackage.Core where
 
 import Control.Monad (liftM)
 import qualified Codec.Archive.Tar as Tar
