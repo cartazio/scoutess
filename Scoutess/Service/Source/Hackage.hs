@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | fetch packages from hackage using @Network.HTTP@
 
-module Scoutess.Service.Source.Hackage where
+module Scoutess.Service.Source.Hackage (fetchHackage) where
 
 import Control.Monad.Trans                           (MonadIO(..), liftIO)
 import Data.List                                     (sort)

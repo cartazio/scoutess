@@ -1,5 +1,8 @@
 -- built with ghc -i"../" --make cabal-proxy.hs
 
+-- | Find cabal files in the given directory and its subdirs and
+--   generates a (cabal/hackage) package index from them
+
 import Scoutess.Service.CabalProxy.Core
 import System.Environment (getArgs)
 
