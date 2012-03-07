@@ -3,5 +3,8 @@ module Scoutess.Server where
 
 import Scoutess.Config (ScoutessConfig)
 
-scoutess :: ScoutessConfig -> IO ()
-scoutess = undefined
+-- | start the server running
+scoutess :: ScoutessConfig -- ^ configuration
+         -> IO ()
+scoutess = 
+    undefined

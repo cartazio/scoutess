@@ -9,6 +9,7 @@ import Data.Text                    (Text)
 import qualified Data.Text          as Text
 import Scoutess.Service.Source.Core (SourceConfig, SourceException, SourceInfo)
 
+-- | fetch source using @darcs@
 fetchDarcs :: (MonadIO m) =>
               SourceConfig -- ^ 'SourceConfig'
            -> Text         -- ^ location of darcs repo (e.g. @http:\/\/example.org\/repo@, @ssh:\/\/user\@example.org/srv/darcs/repo@)

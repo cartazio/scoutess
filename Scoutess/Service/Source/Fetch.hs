@@ -1,3 +1,4 @@
+-- | high-level interface to source fetching
 module Scoutess.Service.Source.Fetch where
 
 import Control.Monad                   (liftM)

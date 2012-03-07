@@ -31,7 +31,7 @@ findCabalFiles :: FilePath -- ^ where to start looking (recursively)
 findCabalFiles = find recPred (extension ==? ".cabal")
   where recPred = (`notElem` ["_darcs", ".git", "src", "tests", "test", "examples", "Data", "Control", "data"]) `liftM` fileName
         
--- | compresses all the cabal files in a tar archive, keeping the diretory tree structure
+-- | compresses all the cabal files in a tar archive, keeping the directory tree structure
 tarCabalFiles :: [FilePath] -- ^ list of cabal files
               -> FilePath   -- ^ base directory
               -> FilePath   -- ^ file path for the output tar file

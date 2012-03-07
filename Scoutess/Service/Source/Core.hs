@@ -10,6 +10,7 @@ import Data.Text                       (Text)
 import qualified Data.Text             as Text
 import Distribution.PackageDescription (PackageDescription)
 
+-- | Configuration for fetching sources
 data SourceConfig = SourceConfig
     { srcCacheDir :: FilePath -- ^ path to directory that holds retrieved source
     }

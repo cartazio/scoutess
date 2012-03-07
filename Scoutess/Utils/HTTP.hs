@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+-- | HTTP utility functions
 module Scoutess.Utils.HTTP (downloadFile) where
 
 import Network.HTTP
@@ -7,7 +8,14 @@ import Network.URI (parseURI)
 
 import qualified Data.ByteString as BS
 
-downloadFile :: String -> FilePath -> IO (Maybe FilePath)
+-- | download a file over @http:\/\/@
+--
+-- 'Nothing' on failure
+--
+-- @Just filepath@ on success
+downloadFile :: String   -- ^ remote url
+             -> FilePath -- ^ local file name
+             -> IO (Maybe FilePath)
 downloadFile url dest = do
   let (Just uri) = parseURI url 
   ersp <- simpleHTTP (defaultGETRequest_ uri)
