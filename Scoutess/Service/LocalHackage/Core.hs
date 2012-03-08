@@ -23,14 +23,14 @@ generateIndex archives pkgsDir pkgFile = do
 extractArchives :: [FilePath] -- ^ list of package archives (.tar.gz)
                 -> FilePath   -- ^ output directory
                 -> IO ()
-extractArchives archives dir = mapM_ (flip extractArchive dir) archives 
-                    
+extractArchives archives dir = mapM_ (flip extractArchive dir) archives
+
 -- | looks for all .cabal files in the provided directory and its subdirectories
 findCabalFiles :: FilePath -- ^ where to start looking (recursively)
                -> IO [FilePath] -- ^ the file paths to the .cabal files
 findCabalFiles = find recPred (extension ==? ".cabal")
   where recPred = (`notElem` ["_darcs", ".git", "src", "tests", "test", "examples", "Data", "Control", "data"]) `liftM` fileName
-        
+
 -- | compresses all the cabal files in a tar archive, keeping the directory tree structure
 tarCabalFiles :: [FilePath] -- ^ list of cabal files
               -> FilePath   -- ^ base directory
