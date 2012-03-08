@@ -15,7 +15,6 @@ Cabal-version:       >=1.2
 Library
   Exposed-Modules:
                      Control.Pipe.Process
-                     Control.Pipe.Tee
                      Scoutess.Config
                      Scoutess.Server
                      Scoutess.Service.Builder.Core
