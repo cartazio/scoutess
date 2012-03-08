@@ -13,18 +13,63 @@ import Control.Pipe.Binary (handleWriter)
 import Data.ByteString (ByteString, empty, hGetSome, hPut)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
+import Data.Void  (Void)
 import System.Exit
 import System.IO
 import System.Process
 
 data IOAction
     = Stdout ByteString
-    | StdoutClosed
+--    | StdoutClosed
     | Stderr ByteString
-    | StderrClosed
-    | InputReady
+--    | StderrClosed
+--    | InputReady
     | Terminated ExitCode
 
+process :: FilePath                 -- ^ path to executable
+        -> [String]                 -- ^ arguments to pass to executable
+        -> Maybe String             -- ^ optional working directory
+        -> Maybe [(String, String)] -- ^ optional environment (otherwise inherit)
+        -> Pipe Void (Either ByteString ByteString) IO ExitCode
+process executable args wd env =
+    do action <- lift $ atomically newTChan
+       tids   <- lift $
+               do (inh, outh, errh, proch) <- runInteractiveProcess executable args wd env
+                  hClose inh
+
+                  outTid <- forkIO $ forever $
+                     do b <- hGetSome outh 100
+                        atomically $ writeTChan action (Stdout b)
+
+                  errTid <- forkIO $ forever $
+                     do b <- hGetSome errh 100
+                        atomically $ writeTChan action (Stderr b)
+
+                  termTid <- forkIO $
+                     do ec <- waitForProcess proch
+                        atomically $ writeTChan action (Terminated ec)
+                  return [outTid, errTid, termTid]
+       ec <- go action
+       lift $ mapM_ killThread tids
+       return ec
+
+    where
+      go :: TChan IOAction -> Pipe a (Either ByteString ByteString) IO ExitCode
+      go action = go' 
+          where
+            go' =
+                do a <- lift $ atomically $ readTChan action
+                   case a of
+                     (Stdout b) ->
+                         do yield (Right b)
+                            go'
+                     (Stderr b) ->
+                         do yield (Left b)
+                            go'
+                     (Terminated ec) ->
+                         do return ec
+
+{-
 process :: FilePath                 -- ^ path to executable
         -> [String]                 -- ^ arguments to pass to executable
         -> Maybe String             -- ^ optional working directory
@@ -150,3 +195,4 @@ test2 =
        forkIO $ runPipe $ (procOut >>= \ec -> lift ( print ec >> putMVar done ())) >+> (forever $ (lift . either C.putStr C.putStr ) =<< await)
        readMVar done
        return ()
+-}
