@@ -1,64 +1,85 @@
 -- | a (currently broken) 'Pipe' interface to 'runInteractiveProcess'
 module Control.Pipe.Process where
 
-import Control.Concurrent (killThread, forkIO)
+import Control.Concurrent (ThreadId, killThread, forkIO)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
-import Control.Concurrent.MVar
+import Control.Concurrent.STM.TMVar
 import Control.Monad
 import Control.Monad.Trans
 import Control.Pipe
-import Control.Pipe.Binary (handleWriter)
+import Control.Pipe.Binary    (handleWriter)
+import Control.Pipe.Exception (bracket)
 import Data.ByteString (ByteString, empty, hGetSome, hPut)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
-import Data.Void  (Void)
 import System.Exit
 import System.IO
 import System.Process
 
 data IOAction
     = Stdout ByteString
---    | StdoutClosed
+    | StdoutEOF
     | Stderr ByteString
---    | StderrClosed
---    | InputReady
+    | StderrEOF
     | Terminated ExitCode
 
-process :: FilePath                 -- ^ path to executable
+process :: (MonadIO m) =>
+           FilePath                 -- ^ path to executable
         -> [String]                 -- ^ arguments to pass to executable
         -> Maybe String             -- ^ optional working directory
         -> Maybe [(String, String)] -- ^ optional environment (otherwise inherit)
-        -> Pipe Void (Either ByteString ByteString) IO ExitCode
+        -> Pipe () (Either ByteString ByteString) m ExitCode
 process executable args wd env =
-    do action <- lift $ atomically newTChan
-       tids   <- lift $
+    bracket (liftIO initProcess)
+            (liftIO . terminateProcess)
+            go
+    where
+      initProcess =
+          do action <- atomically newTChan
+             outEOF <- atomically newEmptyTMVar
+             errEOF <- atomically newEmptyTMVar
+             tids   <-
                do (inh, outh, errh, proch) <- runInteractiveProcess executable args wd env
                   hClose inh
 
-                  outTid <- forkIO $ forever $
-                     do b <- hGetSome outh 100
-                        atomically $ writeTChan action (Stdout b)
+                  outTid <- forkIO $ let loop = do b <- hGetSome outh 100
+                                                   atomically $ writeTChan action (Stdout b)
+                                                   eof <- hIsEOF outh
+                                                   if eof
+                                                    then atomically $ putTMVar outEOF ()
+                                                    else loop
+                                     in loop
 
-                  errTid <- forkIO $ forever $
-                     do b <- hGetSome errh 100
-                        atomically $ writeTChan action (Stderr b)
+
+
+                  errTid <- forkIO $ let loop = do b <- hGetSome errh 100
+                                                   atomically $ writeTChan action (Stderr b)
+                                                   eof <- hIsEOF errh
+                                                   if eof
+                                                    then atomically $ putTMVar errEOF ()
+                                                    else loop
+                                     in loop
 
                   termTid <- forkIO $
-                     do ec <- waitForProcess proch
+                     do atomically $ takeTMVar outEOF
+                        atomically $ takeTMVar errEOF
+                        ec <- waitForProcess proch
                         atomically $ writeTChan action (Terminated ec)
-                  return [outTid, errTid, termTid]
-       ec <- go action
-       lift $ mapM_ killThread tids
-       return ec
 
-    where
-      go :: TChan IOAction -> Pipe a (Either ByteString ByteString) IO ExitCode
-      go action = go' 
+                  return [outTid, errTid, termTid]
+             return (action, tids)
+      terminateProcess (_, tids) = do
+          mapM_ killThread tids
+
+      go :: (MonadIO m) =>
+            (TChan IOAction, [ThreadId])
+         -> Pipe a (Either ByteString ByteString) m ExitCode
+      go (action, _) = go'
           where
-            go' =
-                do a <- lift $ atomically $ readTChan action
+            go' = -- this is not safe.. the process quit thread could return before the stdout/stderr threads have
+                do a <- lift $ liftIO $ atomically $ readTChan action
                    case a of
                      (Stdout b) ->
                          do yield (Right b)
