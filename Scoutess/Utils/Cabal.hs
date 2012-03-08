@@ -1,4 +1,4 @@
-module Scoutess.Util.Cabal where
+module Scoutess.Utils.Cabal where
 
 import Control.Pipe
 import Control.Pipe.Process

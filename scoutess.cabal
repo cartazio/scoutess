@@ -15,29 +15,46 @@ Cabal-version:       >=1.2
 
 Library 
   Exposed-Modules:
+                     Control.Pipe.Process
+                     Control.Pipe.Tee
                      Scoutess.Config
                      Scoutess.Server
                      Scoutess.Service.Builder.Core
+                     Scoutess.Service.Haddock.Core
+                     Scoutess.Service.LocalHackage.Core
                      Scoutess.Service.PackDeps.Core
+                     Scoutess.Service.Source.Core
                      Scoutess.Service.Source.Darcs
                      Scoutess.Service.Source.Fetch
-                     Scoutess.Service.Source.Core
-  Build-Depends:     
-                     base       < 5,
-                     aeson      == 0.6.*,
-                     bytestring == 0.9.*,
-                     Cabal      == 1.14.*,
-                     directory  == 1.1.*,
-                     filepath   == 1.3.*,
-                     HTTP       == 4000.2.*,
-                     mtl        == 2.0.*,
-                     network    == 2.3.*,
-                     packdeps   == 0.3.*,
-                     safecopy   == 0.6.*,
-                     text       == 0.11.*,
-                     filemanip  == 0.3.*,
-                     zlib       == 0.5.*,
-                     tar        == 0.4.*
+                     Scoutess.Service.Source.Hackage
+                     Scoutess.Utils.Archives
+                     Scoutess.Utils.Cabal
+                     Scoutess.Utils.HTTP
+
+  -- we require pipes-core/pipes-extra from github at the moment.
+  -- https://github.com/pcapriotti/pipes-core
+  -- https://github.com/pcapriotti/pipes-extra
+  Build-Depends:     base        < 5,
+                     aeson       == 0.6.*,
+                     bytestring  == 0.9.*,
+                     Cabal       == 1.14.*,
+                     directory   == 1.1.*,
+                     filemanip   == 0.3.*,
+                     filepath    == 1.3.*,
+                     HTTP        == 4000.2.*,
+                     mtl         == 2.0.*,
+                     network     == 2.3.*,
+                     packdeps    == 0.3.*,
+                     pipes-core  == 0.0.*,
+                     pipes-extra == 0.0.*,
+                     process     == 1.1.*,
+                     safecopy    == 0.6.*,
+                     stm         == 2.2.*,
+                     tar         == 0.4.*,
+                     text        == 0.11.*,
+                     void        == 0.5.*,
+                     zlib        == 0.5.*
+
 
 Executable scoutess
   Main-is: Main.hs
