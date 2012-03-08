@@ -7,7 +7,7 @@ import Control.Pipe.Process
 import Control.Monad.Trans  (lift)
 import Data.ByteString
 import Data.Typeable        (Typeable)
-import Distribution.Package (PackageIdentifier)
+import Distribution.Package (PackageIdentifier(pkgName))
 import Distribution.PackageDescription
 import Distribution.PackageDescription.Parse (readPackageDescription)
 import Distribution.Text    (display)
@@ -42,24 +42,23 @@ update =
     cabal "." ["update"]
 
 -- | run @cabal unpack@
-unpack :: PackageIdentifier  -- ^ package to fetch and unpack
-       -> String             -- ^ directory to run @cabal unpack@ in
+unpack :: String             -- ^ directory to run @cabal unpack@ in
+       -> PackageIdentifier  -- ^ package to fetch and unpack
        -> Pipe () (Either ByteString ByteString) IO (Either ExitCode UnpackInfo)
-unpack packageIdentifier workingDirectory =
+unpack workingDirectory packageIdentifier =
     do exitCode <- cabal workingDirectory ["unpack", display packageIdentifier]
        case exitCode of
          (ExitFailure _) ->
                 return (Left exitCode)
          (ExitSuccess)   ->
-             do let unpackDir = workingDirectory </> display packageIdentifier
-                    dotCabal  = unpackDir </> display packageIdentifier <.> "cabal"
+             do let unpackDir = workingDirectory </> display packageIdentifier -- check exit codedentifier
+                    dotCabal  = unpackDir </> display (pkgName packageIdentifier) <.> "cabal"
                 pkgDesc <- lift $ readPackageDescription silent dotCabal
                 let unpackInfo =
                         UnpackInfo { unpackPath = unpackDir
                                    , unpackPackageDescription = pkgDesc
                                    }
                 return (Right unpackInfo)
-
 
 -- | Information about source which has been unpacked via 'cabal unpack'
 data UnpackInfo = UnpackInfo
