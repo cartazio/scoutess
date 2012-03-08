@@ -1,7 +1,7 @@
 Name:                scoutess
 Version:             0.1
 Synopsis:            A Haskell build bot for cabal-powered projects
--- Description:         
+-- Description:
 Homepage:            https://patch-tag.com/r/alpmestan/scoutess
 License:             BSD3
 License-file:        LICENSE
@@ -10,10 +10,9 @@ Maintainer:          alpmestan@gmail.com
 Copyright:           2012 Jeremy Shaw, Alp Mestanogullari
 Category:            Testing
 Build-type:          Simple
--- Extra-source-files:  
 Cabal-version:       >=1.2
 
-Library 
+Library
   Exposed-Modules:
                      Control.Pipe.Process
                      Control.Pipe.Tee
@@ -58,13 +57,13 @@ Library
 
 Executable scoutess
   Main-is: Main.hs
-  
+  GHC-Options: -O2 -threaded
+
   -- Packages needed in order to build this package.
-  -- Build-depends:       
-  
+  -- Build-depends:
+
   -- Modules not exported by this package.
-  -- Other-modules:       
-  
+  -- Other-modules:
+
   -- Extra tools (e.g. alex, hsc2hs, ...) needed to build the source.
-  -- Build-tools:         
-  
+  -- Build-tools:
