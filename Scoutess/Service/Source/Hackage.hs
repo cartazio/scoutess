@@ -23,7 +23,7 @@ baseUrl :: String
 baseUrl = "http://hackage.haskell.org/packages/archive/"
 
 packageUrl :: Text -> Text -> String
-packageUrl pkgName pkgVersion = baseUrl ++ Text.unpack pkgName ++ "/" ++ Text.unpack pkgVersion ++ "/" ++ Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion ++ ".tar.gz" 
+packageUrl pkgName pkgVersion = baseUrl ++ Text.unpack pkgName ++ "/" ++ Text.unpack pkgVersion ++ "/" ++ Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion ++ ".tar.gz"
 
 -- | A wrapper that handles unspecified version, etc
 fetchHackage :: (MonadIO m) =>
@@ -31,42 +31,42 @@ fetchHackage :: (MonadIO m) =>
              -> Text         -- ^ package name
              -> Maybe Text   -- ^ package version
              -> m (Either SourceException SourceInfo)
-fetchHackage sourceConfig pkgName pkgVersion' = 
-  case pkgVersion' of 
+fetchHackage sourceConfig pkgName pkgVersion' =
+  case pkgVersion' of
     Nothing -> do
       mVer <- getLatestVersionOf sourceConfig pkgName
       liftIO $ removeDirectoryRecursive (srcCacheDir sourceConfig </> "tmp")
       maybe (return . Left $ SourceErrorOther "Couldn't find package or latest package version") (fetchHackage' sourceConfig pkgName) mVer
     Just ver -> fetchHackage' sourceConfig pkgName ver
-    
+
 -- | The function that actually fetches the package
 fetchHackage' :: (MonadIO m) =>
                  SourceConfig
-              -> Text 
+              -> Text
               -> Text
               -> m (Either SourceException SourceInfo)
 fetchHackage' sourceConfig pkgName pkgVersion = do
   let pkgUrl = packageUrl pkgName pkgVersion
   let localPath = srcCacheDir sourceConfig ++ Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion ++ ".tar.gz"
   dledPath <- liftIO $ downloadFile pkgUrl $ (srcCacheDir sourceConfig) ++ Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion ++ ".tar.gz"
-  case dledPath of 
-    Just _ -> do 
+  case dledPath of
+    Just _ -> do
       let destDir = srcCacheDir sourceConfig </> Text.unpack pkgName
       liftIO $ createDirectoryIfMissing True destDir
       liftIO $ extractArchive localPath destDir
       liftIO $ renameDirectory (destDir </> Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion) (destDir </> Text.unpack pkgVersion)
-      genericPkgDesc <- liftIO $ readPackageDescription silent (destDir </> Text.unpack pkgVersion </> (Text.unpack pkgName ++ ".cabal")) 
+      genericPkgDesc <- liftIO $ readPackageDescription silent (destDir </> Text.unpack pkgVersion </> (Text.unpack pkgName ++ ".cabal"))
       let pkgDescr = flattenPackageDescription genericPkgDesc
       let srcVer = pkgName `Text.append` "-" `Text.append` pkgVersion
       return . Right $ SourceInfo { srcPath               = destDir </> Text.unpack pkgVersion
                                   , srcPackageDescription = pkgDescr
                                   , srcVersion            = srcVer }
     Nothing -> return . Left $ SourceErrorOther "Couldn't download the package archive. Please check that your connection and the hackage.haskell.org server are up."
-    
+
 -- | Gets the latest version (on hackage.haskell.org) of a given package.
 --   Returns 'Nothing' if it can't retrieve it.
 -- /!\ THIS FUNCTIONS FETCHES THE PKGINDEX, INSPECTS IT AND THEN DOESNT REMOVES IT (it's removed by fetchHackage)
---     ^ EVERY TIME IT'S CALLED!        
+--     ^ EVERY TIME IT'S CALLED!
 getLatestVersionOf :: (MonadIO m) =>
                       SourceConfig -- ^ 'SourceConfig'
                    -> Text -- ^ Package we want the latest version of
@@ -74,16 +74,16 @@ getLatestVersionOf :: (MonadIO m) =>
 getLatestVersionOf sourceConfig pkgName = do
   liftIO $ createDirectoryIfMissing True tmpDir
   pkgIndex' <- liftIO $ downloadFile "http://hackage.haskell.org/packages/archive/00-index.tar.gz" $ tmpDir </> "00-index.tar.gz"
-  case pkgIndex' of 
+  case pkgIndex' of
     Nothing -> return Nothing
     Just pkgIndex -> do
       liftIO $ extractArchive pkgIndex tmpDir
       pkgExists <- liftIO $ doesDirectoryExist tmpPkgDir
       case pkgExists of
         True -> do
-          vers <- liftIO $ getDirectoryContents tmpPkgDir 
+          vers <- liftIO $ getDirectoryContents tmpPkgDir
           return $ if null vers then Nothing else Just . Text.pack . last $ sort vers
         False -> return Nothing
-    
+
   where tmpDir = srcCacheDir sourceConfig </> "tmp"
         tmpPkgDir = tmpDir </> Text.unpack pkgName
