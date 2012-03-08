@@ -42,7 +42,7 @@ process executable args wd env =
              errEOF <- atomically newEmptyTMVar
              tids   <-
                do (inh, outh, errh, proch) <- runInteractiveProcess executable args wd env
-                  hClose inh
+--                  hClose inh
 
                   outTid <- forkIO $ let loop = do b <- hGetSome outh 100
                                                    atomically $ writeTChan action (Stdout b)
