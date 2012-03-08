@@ -12,6 +12,7 @@ import Distribution.PackageDescription
 import Distribution.PackageDescription.Parse (readPackageDescription)
 import Distribution.Text    (display)
 import Distribution.Verbosity (silent)
+import System.Directory     (doesDirectoryExist)
 import System.Exit          (ExitCode(..))
 import System.FilePath      ((</>), (<.>))
 
@@ -46,14 +47,18 @@ unpack :: String             -- ^ directory to run @cabal unpack@ in
        -> PackageIdentifier  -- ^ package to fetch and unpack
        -> Pipe () (Either ByteString ByteString) IO (Either ExitCode UnpackInfo)
 unpack workingDirectory packageIdentifier =
-    do exitCode <- cabal workingDirectory ["unpack", display packageIdentifier]
+    do let unpackDir = workingDirectory </> display packageIdentifier -- check exit codedentifier
+           dotCabal  = unpackDir </> display (pkgName packageIdentifier) <.> "cabal"
+       exists <- lift $ doesDirectoryExist unpackDir
+       exitCode <-
+           if exists
+              then return ExitSuccess
+              else cabal workingDirectory ["unpack", display packageIdentifier]
        case exitCode of
          (ExitFailure _) ->
                 return (Left exitCode)
          (ExitSuccess)   ->
-             do let unpackDir = workingDirectory </> display packageIdentifier -- check exit codedentifier
-                    dotCabal  = unpackDir </> display (pkgName packageIdentifier) <.> "cabal"
-                pkgDesc <- lift $ readPackageDescription silent dotCabal
+             do pkgDesc <- lift $ readPackageDescription silent dotCabal
                 let unpackInfo =
                         UnpackInfo { unpackPath = unpackDir
                                    , unpackPackageDescription = pkgDesc
