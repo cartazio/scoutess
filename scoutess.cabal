@@ -19,6 +19,7 @@ Library
                      Scoutess.Server
                      Scoutess.Service.Builder.Core
                      Scoutess.Service.Haddock.Core
+                     Scoutess.Service.Haddock.CoreHaddock
                      Scoutess.Service.LocalHackage.Core
                      Scoutess.Service.PackDeps.Core
                      Scoutess.Service.Source.Core
@@ -27,6 +28,7 @@ Library
                      Scoutess.Service.Source.Hackage
                      Scoutess.Utils.Archives
                      Scoutess.Utils.Cabal
+                     Scoutess.Utils.Haddock
                      Scoutess.Utils.HTTP
 
   -- we require pipes-core/pipes-extra from github at the moment.

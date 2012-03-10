@@ -16,7 +16,7 @@ utf8-string-0.3.7, xhtml-3000.2.0.5, zlib-0.5.3.3
 Even though we include --read-interface flags for that. The warning is likely wrong and is based on what cabal itself automatically found. But, really, we do not want cabal finding anything except what we tell it. Perhaps we should invoke haddock directly instead of using cabal?
 
 -}
-module Scoutess.Service.Haddock.Core where
+module Scoutess.Service.Haddock.CoreHaddock where
 
 import Control.Pipe
 import Control.Pipe.Binary
@@ -25,16 +25,17 @@ import Control.Monad
 import Control.Monad.Trans
 import Data.ByteString       (ByteString)
 import Data.ByteString.Char8 (pack)
-import Distribution.InstalledPackageInfo
 import Distribution.Package (PackageIdentifier(..), PackageName(..))
 import Distribution.PackageDescription (GenericPackageDescription(..), PackageDescription(..))
 import Distribution.Simple.Configure
 import Distribution.Simple.LocalBuildInfo
-import qualified Distribution.Simple.PackageIndex as PackageIndex
+import qualified Distribution.Simple.Haddock as C
+import Distribution.Simple.Setup (HaddockFlags(..), defaultHaddockFlags)
 import Distribution.Text    (display)
 import Distribution.Version (Version)
 import Scoutess.Utils.Cabal (UnpackInfo(..))
-import qualified Scoutess.Utils.Cabal as Cabal
+import qualified Scoutess.Utils.Cabal   as Cabal
+import qualified Scoutess.Utils.Haddock as Haddock
 import System.Directory     (copyFile, createDirectoryIfMissing, doesDirectoryExist, doesFileExist)
 import System.FilePath      ((</>), (<.>))
 import System.IO
@@ -65,9 +66,7 @@ haddock unpackDir docDir packageIdentifier =
                                        then checkPersistBuildConfigOutdated distPref dotCabalPath
                                        else return True
                 lift $ putStrLn $ "outdated: " ++ show (outdated, distPref, dotCabalPath)
-                when (outdated) $ do Cabal.configure (unpackPath unpackInfo) ["--user"]
-                                     lift $ adjustHaddockIO docDir distPref
-                                     return ()
+                when (outdated) $ Cabal.configure (unpackPath unpackInfo) ["--user"]  >> return ()
                 lbi <- lift $ getPersistBuildConfig distPref
                 case libraryConfig lbi of
                   Nothing -> return () -- nothing to do if there is no library?
@@ -77,11 +76,17 @@ haddock unpackDir docDir packageIdentifier =
                          lift $ createDirectoryIfMissing True docDir'
                          includes <- mapM mkInclude packageIds
 --                         lift $ putStrLn $ unwords $ concat $ includes
-                         ec <- Cabal.haddock (unpackPath unpackInfo)
+                         let flags = defaultHaddockFlags
+                                     { haddockProgramArgs = ("-v", []) : concat includes
+                                     }
+                         lift $ C.haddock (localPkgDescr lbi) lbi [] flags
+{-
+ (unpackPath unpackInfo)
                                  ([ "--haddock-option", "-o", "--haddock-option", docDir'
                                   , "--html"
                                   , "--haddock-option", "--hoogle"
-                                  ])
+                                  ] ++ concat includes)
+-}
                          return ()
     where
       mkInclude packageIdentifier
@@ -100,8 +105,8 @@ haddock unpackDir docDir packageIdentifier =
                                                return True
                                        else return False
              if destExists'
-              then return [ "--haddock-option", "--read-interface"
-                          , "--haddock-option", "../" ++ display packageIdentifier ++ "," ++ destDotHaddockPath
+              then return [ ("--read-interface"
+                          , ["../" ++ display packageIdentifier ++ "," ++ destDotHaddockPath])
                           ]
               else return []
           where
@@ -113,26 +118,3 @@ haddockDependencies :: FilePath
                     -> Pipe () (Either ByteString ByteString) IO ()
 haddockDependencies unpackDir docDir packageIdentifiers =
     mapM_ (haddock unpackDir docDir) packageIdentifiers
-
-
-
-adjustHaddockIO :: FilePath -> FilePath -> IO ()
-adjustHaddockIO baseDocDir distPath =
-    do lbi <- getPersistBuildConfig distPath
-       writePersistBuildConfig distPath (adjustHaddock baseDocDir lbi)
-
-adjustHaddock :: FilePath -> LocalBuildInfo -> LocalBuildInfo
-adjustHaddock baseDocDir lbi =
-    let packages = PackageIndex.allPackages (installedPkgs lbi)
-    in  lbi { installedPkgs = PackageIndex.fromList (map (adjustHaddock' baseDocDir) packages) }
-
-
-adjustHaddock' :: FilePath -> InstalledPackageInfo -> InstalledPackageInfo
-adjustHaddock' baseDocDir ipi =
-    let srcPkg = sourcePackageId ipi
-        docDir = baseDocDir </> (display srcPkg)
-        interface = docDir </> display (pkgName srcPkg) <.> "haddock"
-    in
-      ipi { haddockInterfaces = [interface]
-          , haddockHTMLs      = [docDir]
-          }
