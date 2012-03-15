@@ -28,6 +28,7 @@ Library
                      Scoutess.Service.Source.Hackage
                      Scoutess.Utils.Archives
                      Scoutess.Utils.Cabal
+                     Scoutess.Utils.Directory
                      Scoutess.Utils.Haddock
                      Scoutess.Utils.HTTP
 
