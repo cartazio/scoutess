@@ -13,7 +13,7 @@ import Distribution.PackageDescription.Configuration (flattenPackageDescription)
 import Distribution.PackageDescription.Parse         (readPackageDescription)
 import Distribution.Verbosity                        (silent)
 import System.FilePath.Posix                         ((</>))
-import System.Directory                              (createDirectoryIfMissing, renameDirectory, doesDirectoryExist, getDirectoryContents, removeDirectoryRecursive)
+import System.Directory                              (createDirectoryIfMissing, renameDirectory, doesDirectoryExist, getDirectoryContents, removeDirectoryRecursive, removeFile)
 
 import Scoutess.Service.Source.Core (SourceConfig(..), SourceException(..), SourceInfo(..))
 import Scoutess.Utils.Archives
@@ -48,16 +48,17 @@ fetchHackage' :: (MonadIO m) =>
 fetchHackage' sourceConfig pkgName pkgVersion = do
   let pkgUrl = packageUrl pkgName pkgVersion
   let localPath = srcCacheDir sourceConfig ++ Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion ++ ".tar.gz"
-  dledPath <- liftIO $ downloadFile pkgUrl $ (srcCacheDir sourceConfig) ++ Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion ++ ".tar.gz"
+  dledPath <- liftIO $ downloadFile pkgUrl localPath
   case dledPath of
     Just _ -> do
       let destDir = srcCacheDir sourceConfig </> Text.unpack pkgName
       liftIO $ createDirectoryIfMissing True destDir
       liftIO $ extractArchive localPath destDir
       liftIO $ renameDirectory (destDir </> Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion) (destDir </> Text.unpack pkgVersion)
+      liftIO $ removeFile localPath
       genericPkgDesc <- liftIO $ readPackageDescription silent (destDir </> Text.unpack pkgVersion </> (Text.unpack pkgName ++ ".cabal"))
       let pkgDescr = flattenPackageDescription genericPkgDesc
-      let srcVer = pkgName `Text.append` "-" `Text.append` pkgVersion
+      let srcVer = pkgVersion
       return . Right $ SourceInfo { srcPath               = destDir </> Text.unpack pkgVersion
                                   , srcPackageDescription = pkgDescr
                                   , srcVersion            = srcVer }

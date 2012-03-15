@@ -51,7 +51,7 @@ $(deriveSafeCopy 0 'base ''SourceInfo)
 -- should this be an 'Exception' or just an 'Error'?
 --
 -- Do we need to include the 'SourceLocation' in the error?
-data SourceException 
+data SourceException
     = SourceErrorOther Text
     | SourceErrorUnknown
     deriving (Eq, Ord, Read, Show, Data, Typeable)
@@ -63,7 +63,7 @@ instance Error SourceException where
     strMsg s = SourceErrorOther (Text.pack s)
 
 instance Exception SourceException
-    
+
 -- | return a human readable error message
 sourceErrorMsg :: SourceException  -- ^ error
                -> Text         -- ^ error message
