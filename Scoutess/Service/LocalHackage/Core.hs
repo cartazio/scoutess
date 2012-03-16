@@ -30,7 +30,8 @@ generateIndex :: LocalHackage -- ^ directory that contains the packages
 generateIndex hackage pkgIndex = do
   let pkgsDir = hackageDir hackage
   cabals <- findCabalFiles pkgsDir
-  tarGzipFiles (map (drop $ prefix pkgsDir) cabals) pkgsDir pkgIndex
+  tarFiles (map (drop $ prefix pkgsDir) cabals) pkgsDir pkgIndex
+  tarGzipFiles (map (drop $ prefix pkgsDir) cabals) pkgsDir (pkgIndex ++ ".gz")
 
   where prefix d = case last d == '/' of
           True  -> length d
@@ -64,7 +65,7 @@ addPackage srcInfo hackage = do
     copyDir src tmpPackageDir
     tarGzipFiles [pkgIdent] (hackageTmpDir hackage) (packageVersionDir </> pkgIdent <.> ".tar.gz")
     removeDirectoryRecursive tmpPackageDir
-    generateIndex hackage (hackageDir hackage </> "00-index.tar.gz")
+    generateIndex hackage (hackageDir hackage </> "00-index.tar")
 
   where (PackageName pkgN)    = pkgName . package . srcPackageDescription $ srcInfo
         pkgVersion               = srcVersion srcInfo
