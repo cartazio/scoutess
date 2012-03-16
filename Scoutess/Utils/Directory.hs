@@ -6,14 +6,14 @@ module Scoutess.Utils.Directory (copyDir) where
 import System.Directory
 import System.FilePath
 
-import Scoutess.Utils.Archives (tarFiles, extractTar)
+import qualified Codec.Archive.Tar    as Tar
+import qualified Data.ByteString.Lazy as L
 
 -- | Copies the content of a directory into another
 copyDir :: FilePath -> FilePath -> IO ()
 copyDir from to = do
   dirContent <- filter pred `fmap` getDirectoryContents from
-  tarFiles dirContent from (from </> "tmp.tar")
-  extractTar to (from </> "tmp.tar")
-  removeFile (from </> "tmp.tar")
+  taredEntries <- Tar.pack from dirContent
+  Tar.unpack to $ Tar.read (Tar.write taredEntries)
 
   where pred x = not (x `elem` [".", ".."])
