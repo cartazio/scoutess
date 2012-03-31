@@ -30,6 +30,14 @@ configure :: FilePath -- ^ path to directory that contains the @.cabal@
 configure workingDirectory args =
     cabal workingDirectory  ("configure":args)
 
+-- | run @cabal configure@
+install :: FilePath -- ^ path to directory that contains the @.cabal@
+        -> [String] -- ^ flags to pass to @cabal configure@
+        -> Pipe () (Either ByteString ByteString) IO ExitCode
+install workingDirectory args =
+    cabal workingDirectory  ("install":args)
+
+
 -- | run @cabal haddock@
 haddock :: FilePath -- ^ path to directory that contains the @.cabal@
         -> [String] -- ^ flags to pass to @cabal haddock@

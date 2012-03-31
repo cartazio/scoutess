@@ -29,6 +29,7 @@ import Distribution.Package (PackageIdentifier(..), PackageName(..))
 import Distribution.PackageDescription (GenericPackageDescription(..), PackageDescription(..))
 import Distribution.Simple.Configure
 import Distribution.Simple.LocalBuildInfo
+
 import qualified Distribution.Simple.Haddock as C
 import Distribution.Simple.Setup (HaddockFlags(..), defaultHaddockFlags)
 import Distribution.Text    (display)

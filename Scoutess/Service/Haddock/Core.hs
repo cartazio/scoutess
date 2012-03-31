@@ -48,6 +48,7 @@ haddock :: FilePath           -- ^ directory for unpacked source (from hackage)
         -> Pipe () (Either ByteString ByteString) IO ()
 haddock unpackDir docDir packageIdentifier =
   do let docDir' = docDir </> display packageIdentifier
+         buildDir = "/tmp/build-dir" </> display packageIdentifier
      eDocDir' <- lift $ doesDirectoryExist docDir'
      if eDocDir' -- skip if output directory already exists (not the right thing to do if the docs are out of date)
       then return ()
@@ -58,16 +59,18 @@ haddock unpackDir docDir packageIdentifier =
          (Left ec) ->
                 yield (Left $ pack $ show ec)
          (Right unpackInfo) ->
-             do let distPref      = (unpackPath unpackInfo </> "dist") -- I don't feel good about hardcoding "dist", move calculation to Cabal
+             do let -- distPref      = (unpackPath unpackInfo </> "dist") -- I don't feel good about hardcoding "dist", move calculation to Cabal
+                    distPref      = (docDir') --  </> "dist") -- I don't feel good about hardcoding "dist", move calculation to Cabal
                     dotCabalPath  = (unpackPath unpackInfo </> display (pkgName packageIdentifier) <.> "cabal")
                 outdated <- lift $ do e <- doesFileExist (localBuildInfoFile distPref)
                                       if e
                                        then checkPersistBuildConfigOutdated distPref dotCabalPath
                                        else return True
                 lift $ putStrLn $ "outdated: " ++ show (outdated, distPref, dotCabalPath)
-                when (outdated) $ do Cabal.configure (unpackPath unpackInfo) ["--user"]
-                                     lift $ adjustHaddockIO docDir distPref
-                                     return ()
+                when (outdated) $
+                     do Cabal.configure (unpackPath unpackInfo) ["--user", "--builddir", docDir']
+                        lift $ adjustHaddockIO docDir distPref
+                        return ()
                 lbi <- lift $ getPersistBuildConfig distPref
                 case libraryConfig lbi of
                   Nothing -> return () -- nothing to do if there is no library?
@@ -78,10 +81,25 @@ haddock unpackDir docDir packageIdentifier =
                          includes <- mapM mkInclude packageIds
 --                         lift $ putStrLn $ unwords $ concat $ includes
                          ec <- Cabal.haddock (unpackPath unpackInfo)
+                                 ([ "--builddir", docDir'
+--                                  , "--haddock-option", "-o", "--haddock-option", docDir'
+                                  , "--hyperlink-source"
+                                  , "--internal"
+                                  , "--html-location=/docs/$pkgid/doc/html/$pkg"
+                                  , "--html"
+                                  , "--hoogle"
+                                  ])
+{-
+                         ec <- Cabal.install (unpackPath unpackInfo) []
+
+{-
                                  ([ "--haddock-option", "-o", "--haddock-option", docDir'
                                   , "--html"
                                   , "--haddock-option", "--hoogle"
+                                  , "--html-location", "/docs"
                                   ])
+-}
+-}
                          return ()
     where
       mkInclude packageIdentifier
@@ -126,12 +144,11 @@ adjustHaddock baseDocDir lbi =
     let packages = PackageIndex.allPackages (installedPkgs lbi)
     in  lbi { installedPkgs = PackageIndex.fromList (map (adjustHaddock' baseDocDir) packages) }
 
-
 adjustHaddock' :: FilePath -> InstalledPackageInfo -> InstalledPackageInfo
 adjustHaddock' baseDocDir ipi =
-    let srcPkg = sourcePackageId ipi
-        docDir = baseDocDir </> (display srcPkg)
-        interface = docDir </> display (pkgName srcPkg) <.> "haddock"
+    let srcPkg    = sourcePackageId ipi
+        docDir    = baseDocDir </> (display srcPkg)
+        interface = docDir </> "doc/html/" </> display (pkgName srcPkg) </> display (pkgName srcPkg) <.> "haddock"
     in
       ipi { haddockInterfaces = [interface]
           , haddockHTMLs      = [docDir]
