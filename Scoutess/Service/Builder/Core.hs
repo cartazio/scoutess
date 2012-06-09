@@ -3,6 +3,7 @@ module Scoutess.Service.Builder.Core where
 
 import Control.Monad                 (foldM)
 import Data.Data                     (Data, Typeable)
+import Data.List ((\\))
 import Data.SafeCopy                 (SafeCopy, base, deriveSafeCopy)
 import Distribution.System           (OS)
 import Scoutess.Service.Source.Core  (SourceConfig, SourceException, SourceInfo, SourceLocation)
@@ -11,8 +12,9 @@ import Scoutess.Service.Source.Fetch (fetchSrcs)
 data HackageDB = HackageDB
 
 data BuildHistory = BuildHistory {
+      previouslyBuilt :: [SourceInfo]
     }
-    deriving (Eq, Ord, Read, Show, Data, Typeable)
+    deriving (Eq, Read, Show, Typeable) -- ^ we can't derive 'Data' thanks to 'PackageDescription'
 $(deriveSafeCopy 0 'base ''BuildHistory)
 
 data Diffs = Diffs
@@ -64,7 +66,16 @@ buildSources os sourceConfig buildHistory localHackageDB hackageDBs sources =
 -- | using the 'BuildHistory' figure out which sources have changed since the latest build. 
 --
 calculateSrcChanged :: BuildHistory -> [SourceInfo] -> [SourceInfo]
-calculateSrcChanged buildHistory srcInfos = undefined
+calculateSrcChanged buildHistory srcInfos = srcInfos \\ previouslyBuilt buildHistory
+
+-- | update the 'BuildHistory' with new packages from the 'BuildReport'
+updateHistory :: BuildReport -> BuildHistory -> BuildHistory
+updateHistory buildReport buildHistory = buildHistory{previouslyBuilt = built}
+    where (_,newPackages) = sourceResults buildReport
+          built = foldl addSet newPackages (previouslyBuilt buildHistory)
+          addSet :: Eq a => [a] -> a -> [a]
+          addSet xs x | x `elem` xs = xs
+                      | otherwise   = x:xs
 
 -- | calculate what packages to actually rebuild, and in what order/groups.
 --

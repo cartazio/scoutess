@@ -5,6 +5,7 @@ module Scoutess.Service.Source.Core where
 import Control.Monad.Error             (Error(..))
 import Control.Exception               (Exception)
 import Data.Data                       (Data, Typeable)
+import Data.Function                   (on)
 import Data.SafeCopy                   (SafeCopy(..), base, deriveSafeCopy)
 import Data.Text                       (Text)
 import qualified Data.Text             as Text
@@ -38,7 +39,10 @@ data SourceInfo = SourceInfo
     , srcPackageDescription :: PackageDescription -- ^ contents of .cabal file
     , srcVersion            :: Text               -- ^ something that uniquely identifies this version so we can tell if there are changes from a previous version
     }
-    deriving (Eq, Read, Show, Typeable)
+    deriving (Read, Show, Typeable)
+
+instance Eq SourceInfo where
+   (==) = (==) `on` srcVersion
 
 instance SafeCopy PackageDescription where
     getCopy = undefined
