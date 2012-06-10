@@ -1,23 +1,30 @@
 {-# LANGUAGE Arrows #-}
+module Scoutes.DataFlow where
 
 import Control.Arrow
 import Control.Category
+import Control.Monad
 import Data.Set (Set)
 import Prelude hiding ((.), id)
 import qualified Prelude
 
-data Scoutess a b = Scoutess (a -> b)
+data Scoutess a b = Scoutess (a -> IO b)
 
 instance Category Scoutess where
-    id  = Scoutess $ Prelude.id
-    (Scoutess f) . (Scoutess g) = Scoutess $ f Prelude.. g
+    id  = Scoutess $ return
+    (Scoutess f) . (Scoutess g) = Scoutess $ f <=< g
 
 instance Arrow Scoutess where
-    arr = Scoutess
+    arr f = Scoutess (return . f)
     first (Scoutess f) =
-        Scoutess $ \(b,d) -> (f b, d)
+        Scoutess $ \(b,d) ->
+            do c <- f b
+               return (c, d)
+
     second (Scoutess f) =
-        Scoutess $ \(b,d) -> (b, f d)
+        Scoutess $ \(d, b) ->
+            do c <- f b
+               return (d, c)
 
 data SourceSpec
     = SourceSpec { locations :: Set SourceLocation }
