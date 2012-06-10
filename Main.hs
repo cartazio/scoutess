@@ -24,7 +24,7 @@ main =
             , "happstack-lite-7.2.0"
             , "happstack-hstringtemplate-7.0.1"
             , "happstack-clientsession-7.1.0"
---            , "happstack-yui-7351.2.0"
+            , "happstack-yui-7351.4.1"
             -- , "happstack-plugins-7.0.1")
             , "reform-0.1.1"
             , "reform-blaze-0.1"
