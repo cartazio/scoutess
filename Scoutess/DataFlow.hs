@@ -1,4 +1,4 @@
-{-# LANGUAGE Arrows #-}
+{-# LANGUAGE Arrows, GeneralizedNewtypeDeriving #-}
 module Scoutess.DataFlow where
 
 import Control.Arrow
@@ -11,29 +11,9 @@ import Prelude hiding ((.), id)
 import qualified Prelude
 import qualified Scoutess.Service.Source.Hackage as H (fetchAllVersions)
 
-data Scoutess a b = Scoutess (a -> IO b)
-
-instance Category Scoutess where
-    id  = Scoutess $ return
-    (Scoutess f) . (Scoutess g) = Scoutess $ f <=< g
-
-instance Arrow Scoutess where
-    arr f = Scoutess (return . f)
-    first (Scoutess f) =
-        Scoutess $ \(b,d) ->
-            do c <- f b
-               return (c, d)
-
-    second (Scoutess f) =
-        Scoutess $ \(d, b) ->
-            do c <- f b
-               return (d, c)
-
-instance ArrowChoice Scoutess where
-        left f = f +++ arr id
-        right f = arr id +++ f
-        f +++ g = (f >>> arr Left) ||| (g >>> arr Right)
-        Scoutess f ||| Scoutess g = Scoutess (either f g)
+newtype Scoutess a b = Scoutess (Kleisli IO a b)
+    deriving (Category, Arrow, ArrowApply, ArrowChoice, ArrowLoop, ArrowPlus, ArrowZero)
+liftScoutess = Scoutess . Kleisli
 
 data SourceSpec
     = SourceSpec { locations :: Set SourceLocation }
@@ -100,7 +80,7 @@ standard sourceFilter versionFilter =
            returnA -< buildReport
 
 fetchVersions :: Scoutess SourceSpec VersionSpec
-fetchVersions = Scoutess $ \sourceSpec -> do
+fetchVersions = liftScoutess $ \sourceSpec -> do
     let locations' = S.toList . locations $ sourceSpec
     versions <- liftM concatSets (mapM fetchVersionsFrom locations')
     return (VersionSpec{versionInfos = versions})
