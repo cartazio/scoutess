@@ -100,11 +100,12 @@ standard sourceFilter versionFilter =
            returnA -< buildReport
 
 fetchVersions :: Scoutess SourceSpec VersionSpec
-fetchVersions = proc sourceSpec -> do
+fetchVersions = Scoutess $ \sourceSpec -> do
     let locations' = S.toList . locations $ sourceSpec
-    versionsL <- Scoutess (mapM fetchVersionsFrom) -< locations'
-    versions  <- arr      (foldl S.union S.empty)  -< versionsL
-    returnA   -< VersionSpec{versionInfos = versions}
+    versions <- liftM concatSets (mapM fetchVersionsFrom locations')
+    return (VersionSpec{versionInfos = versions})
+    where concatSets :: Ord a => [Set a] -> Set a
+          concatSets = foldl S.union S.empty
 
 fetchVersionsFrom :: SourceLocation -> IO (Set VersionInfo)
 fetchVersionsFrom Hackage = toVersionInfos =<< H.fetchAllVersions sourceConfig
