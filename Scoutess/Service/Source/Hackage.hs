@@ -1,16 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | fetch packages from hackage using @Network.HTTP@
 
-module Scoutess.Service.Source.Hackage (fetchHackage) where
+module Scoutess.Service.Source.Hackage (fetchHackage, fetchAllVersions) where
 
+import Control.Monad                                 (forM, liftM)
 import Control.Monad.Trans                           (MonadIO(..), liftIO)
 import Data.List                                     (sort)
-import Data.Maybe                                    (maybe)
+import Data.Maybe                                    (catMaybes)
 import Data.Text                                     (Text)
 import qualified Data.Text                           as Text
 import Distribution.PackageDescription
 import Distribution.PackageDescription.Configuration (flattenPackageDescription)
 import Distribution.PackageDescription.Parse         (readPackageDescription)
+import qualified Data.Set                            as S
 import Distribution.Verbosity                        (silent)
 import System.FilePath.Posix                         ((</>))
 import System.Directory                              (createDirectoryIfMissing, renameDirectory, doesDirectoryExist, getDirectoryContents, removeDirectoryRecursive, removeFile)
@@ -34,7 +36,7 @@ fetchHackage :: (MonadIO m) =>
 fetchHackage sourceConfig pkgName pkgVersion' =
   case pkgVersion' of
     Nothing -> do
-      mVer <- getLatestVersionOf sourceConfig pkgName
+      mVer <- fetchLatestVersionOf sourceConfig pkgName
       liftIO $ removeDirectoryRecursive (srcCacheDir sourceConfig </> "tmp")
       maybe (return . Left $ SourceErrorOther "Couldn't find package or latest package version") (fetchHackage' sourceConfig pkgName) mVer
     Just ver -> fetchHackage' sourceConfig pkgName ver
@@ -64,27 +66,42 @@ fetchHackage' sourceConfig pkgName pkgVersion = do
                                   , srcVersion            = srcVer }
     Nothing -> return . Left $ SourceErrorOther "Couldn't download the package archive. Please check that your connection and the hackage.haskell.org server are up."
 
+-- | returns a list of (name,versions)
+-- maybe it should return a list of VersionInfos instead?
+-- XXX: /!\ THIS FUNCTIONS FETCHES THE PKGINDEX, INSPECTS IT AND THEN DOESN'T REMOVE IT
+--     ^ EVERY TIME IT'S CALLED!
+fetchAllVersions :: (MonadIO m) =>
+                  SourceConfig -- ^ 'SourceConfig' defining where the 00-index is stored
+               -> m (S.Set (Text,Text))
+fetchAllVersions sourceConfig = do
+  liftIO $ createDirectoryIfMissing True tmpDir
+  pkgIndex' <- liftIO $ downloadFile "http://hackage.haskell.org/packages/archive/00-index.tar.gz" $ tmpDir </> "00-index.tar.gz"
+  pkgPairs  <- case pkgIndex' of
+    Nothing       -> return []
+    Just pkgIndex -> do
+      liftIO $ extractArchive pkgIndex tmpDir
+      pkgs       <- liftIO $ getDirectoryContents tmpDir
+      maybePairs <- liftIO $ forM pkgs (\pkgName -> do
+        let pkgDir = tmpDir </> pkgName
+        pkgExists <- liftIO $ doesDirectoryExist pkgDir
+        case pkgExists of
+          True -> do
+            vers <- liftIO $ getDirectoryContents pkgDir
+            return $ Just (Text.pack pkgName, map Text.pack vers)
+          False -> return Nothing)
+      return (catMaybes maybePairs)
+  return . S.fromList . explode $ pkgPairs
+  where tmpDir = srcCacheDir sourceConfig </> "tmp"
+        explode :: [(a,[b])] -> [(a,b)]
+        explode = concatMap (\(a,bs) -> map (\b -> (a,b)) bs)
+
 -- | Gets the latest version (on hackage.haskell.org) of a given package.
 --   Returns 'Nothing' if it can't retrieve it.
--- /!\ THIS FUNCTIONS FETCHES THE PKGINDEX, INSPECTS IT AND THEN DOESNT REMOVES IT (it's removed by fetchHackage)
---     ^ EVERY TIME IT'S CALLED!
-getLatestVersionOf :: (MonadIO m) =>
+fetchLatestVersionOf :: (MonadIO m) =>
                       SourceConfig -- ^ 'SourceConfig'
                    -> Text -- ^ Package we want the latest version of
                    -> m (Maybe Text)
-getLatestVersionOf sourceConfig pkgName = do
-  liftIO $ createDirectoryIfMissing True tmpDir
-  pkgIndex' <- liftIO $ downloadFile "http://hackage.haskell.org/packages/archive/00-index.tar.gz" $ tmpDir </> "00-index.tar.gz"
-  case pkgIndex' of
-    Nothing -> return Nothing
-    Just pkgIndex -> do
-      liftIO $ extractArchive pkgIndex tmpDir
-      pkgExists <- liftIO $ doesDirectoryExist tmpPkgDir
-      case pkgExists of
-        True -> do
-          vers <- liftIO $ getDirectoryContents tmpPkgDir
-          return $ if null vers then Nothing else Just . Text.pack . last $ sort vers
-        False -> return Nothing
-
-  where tmpDir = srcCacheDir sourceConfig </> "tmp"
-        tmpPkgDir = tmpDir </> Text.unpack pkgName
+fetchLatestVersionOf sourceConfig pkgName = do
+  nameVers <- fetchAllVersions sourceConfig
+  let vers = S.filter ((==) pkgName . fst) $ nameVers
+  return $ liftM (snd . fst) . S.maxView $ vers

@@ -45,9 +45,9 @@ buildSources :: OS                -- ^ OS to build for
 buildSources os sourceConfig buildHistory localHackageDB hackageDBs sources =
     do results <- fetchSrcs sourceConfig sources
        case results of
-         (errs, sourceInfos) 
-             | not (null errs) -> 
-                 do return (BuildReport { sourceResults = results 
+         (errs, sourceInfos)
+             | not (null errs) ->
+                 do return (BuildReport { sourceResults = results
                                         , diffs = []
                                         })
              | otherwise ->
@@ -57,13 +57,13 @@ buildSources os sourceConfig buildHistory localHackageDB hackageDBs sources =
                     -- in theory would could just pass in 'srcChanged' instead of all the 'sourceInfo'. But passing all the 'sourceInfo' seems more robust.
                     localHackageDB' <- foldM addToHackageDB localHackageDB sourceInfos
                         -- then, by tracking build dependencies, figure out what packages need to be rebuilt, and in what order.
-                        -- It is possible that 
+                        -- It is possible that
                     let buildGroups = calculateRebuilds os (localHackageDB':hackageDBs) srcChanged sourceInfos
                     return (BuildReport { sourceResults = results
                                         , diffs = []
                                         })
-                             
--- | using the 'BuildHistory' figure out which sources have changed since the latest build. 
+
+-- | using the 'BuildHistory' figure out which sources have changed since the latest build.
 --
 calculateSrcChanged :: BuildHistory -> [SourceInfo] -> [SourceInfo]
 calculateSrcChanged buildHistory srcInfos = srcInfos \\ previouslyBuilt buildHistory
@@ -84,12 +84,12 @@ updateHistory buildReport buildHistory = buildHistory{previouslyBuilt = built}
 -- Each '[SourceInfo]'
 --
 -- We probably want some way to attempt to force a rebuild.
-calculateRebuilds :: OS 
+calculateRebuilds :: OS
                   -> [HackageDB]     -- ^ packages available from remote hackageDBs or already installed on the system
                   -> [SourceInfo]    -- ^ all sources that had changes
                   -> [SourceInfo]    -- ^ all available sources that we are interested in rebuilding
                   -> [[SourceInfo]]  -- ^ packages to build (grouped and ordered)
-calculateRebuilds os hackageDBs srcChanged allSrcs  = 
+calculateRebuilds os hackageDBs srcChanged allSrcs  =
     undefined
 
 
