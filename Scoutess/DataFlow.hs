@@ -7,6 +7,7 @@ import Control.Monad
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
+import Distribution.Package
 import Prelude hiding ((.), id)
 import qualified Prelude
 import qualified Scoutess.Service.Source.Hackage as H (fetchAllVersions)
@@ -37,14 +38,14 @@ data BuildReport = BuildReport
     deriving Show
 
 data VersionSpec = VersionSpec
-    { versionInfos :: Set VersionInfo
+    { versions :: Set VersionInfo
     }
     deriving (Show, Eq, Ord)
 
 data VersionInfo = VersionInfo
     {
     }
-    deriving (Show, Eq, Ord)
+    deriving Show
 
 data PriorRun = PriorRun
     {
@@ -82,21 +83,21 @@ standard sourceFilter versionFilter =
 fetchVersions :: Scoutess SourceSpec VersionSpec
 fetchVersions = liftScoutess $ \sourceSpec -> do
     let locations' = S.toList . locations $ sourceSpec
-    versions <- liftM concatSets (mapM fetchVersionsFrom locations')
+    versions <- liftM unions (mapM fetchVersionsFrom locations')
     return (VersionSpec{versionInfos = versions})
-    where concatSets :: Ord a => [Set a] -> Set a
-          concatSets = foldl S.union S.empty
 
 fetchVersionsFrom :: SourceLocation -> IO (Set VersionInfo)
-fetchVersionsFrom Hackage = toVersionInfos =<< H.fetchAllVersions sourceConfig
-    where toVersionInfos :: Set (Text,Text) -> IO (Set VersionInfo)
-          -- ^ this is just temporary, it should be defined in Scoutess.Service.Source.Hackage
+fetchVersionsFrom Hackage = toVersionInfos H.fetchAllVersions sourceConfig
+    where toVersionInfos :: Set (Text,Text) -> Set VersionInfo
+          -- ^ possibly defined in Scoutess.Service.Source.Hackage?
           toVersionInfos  = undefined
           sourceConfig    = undefined
 fetchVersionsFrom  _      = undefined
 
 calculateDependencies :: Scoutess (TargetSpec, VersionSpec) DependencyGraph
 calculateDependencies = undefined
+
+
 
 calculateChanges :: Scoutess (TargetSpec, PriorRun, DependencyGraph) BuildSpec
 calculateChanges = undefined
@@ -106,4 +107,3 @@ updateLocalHackage = undefined
 
 build :: Scoutess (LocalHackageIndex, BuildSpec) BuildReport
 build = undefined
-
