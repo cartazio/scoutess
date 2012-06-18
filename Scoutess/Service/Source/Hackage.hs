@@ -3,7 +3,8 @@
 
 module Scoutess.Service.Source.Hackage (fetchHackage, fetchAllVersions) where
 
-import Control.Monad                                 (forM, liftM)
+import Control.Applicative                           ((<$>))
+import Control.Monad                                 (forM)
 import Control.Monad.Trans                           (MonadIO(..), liftIO)
 import Data.List                                     (sort)
 import Data.Maybe                                    (catMaybes)
@@ -93,7 +94,7 @@ fetchAllVersions sourceConfig = do
   return . S.fromList . explode $ pkgPairs
   where tmpDir = srcCacheDir sourceConfig </> "tmp"
         explode :: [(a,[b])] -> [(a,b)]
-        explode = concatMap (\(a,bs) -> map (\b -> (a,b)) bs)
+        explode abs = [(a,b) | (a,bs) <- abs, b <- bs]
 
 -- | Gets the latest version (on hackage.haskell.org) of a given package.
 --   Returns 'Nothing' if it can't retrieve it.
@@ -103,5 +104,5 @@ fetchLatestVersionOf :: (MonadIO m) =>
                    -> m (Maybe Text)
 fetchLatestVersionOf sourceConfig pkgName = do
   nameVers <- fetchAllVersions sourceConfig
-  let vers = S.filter ((==) pkgName . fst) $ nameVers
-  return $ liftM (snd . fst) . S.maxView $ vers
+  let vers = S.filter ((==) pkgName . fst) nameVers
+  return $ snd . fst <$> S.maxView vers

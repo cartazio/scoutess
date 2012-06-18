@@ -1,13 +1,14 @@
-{-# LANGUAGE Arrows, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE Arrows, GeneralizedNewtypeDeriving, StandaloneDeriving, DeriveDataTypeable #-}
 module Scoutess.DataFlow where
 
+import Control.Applicative ((<$>))
 import Control.Arrow
 import Control.Category
-import Control.Monad (liftM)
 import Control.Monad.State (State, runState, get, put, execState)
 import Data.Array (Array, array)
 import Data.Bimap (Bimap)-- O(log n) bijection between 'Int's and 'VersionInfo's used in 'calculateDependencies'
 import qualified Data.Bimap as B
+import Data.Data (Typeable2, Data(..), mkNoRepType, gcast2)
 import Data.Graph (Graph, Vertex)
 import Data.Set (Set)
 import qualified Data.Set as S
@@ -70,6 +71,15 @@ data DependencyGraph = DependencyGraph
     , association :: Bimap Vertex VersionInfo
     }
 
+deriving instance Typeable2 Bimap
+-- | Given that a 'Bimap' is just two 'Map's, this defintion is very similar to the one for 'Data.Map.Map'
+instance (Data a, Data b, Ord a, Ord b) => Data (Bimap a b) where
+    gfoldl     f z m = z B.fromList `f` B.toList m
+    toConstr   _     = error "toConstr"
+    gunfold    _ _   = error "gunfold"
+    dataTypeOf _     = mkNoRepType "Data.Bimap.Bimap"
+    dataCast2  f     = gcast2 f
+
 data LocalHackageIndex = LocalHackageIndex
     {
     }
@@ -95,7 +105,7 @@ fetchVersions = liftScoutess $ \sourceSpec -> do
     return VersionSpec{versions = S.unions versionsL}
 
 fetchVersionsFrom :: SourceLocation -> IO (Set VersionInfo)
-fetchVersionsFrom Hackage = toVersionInfos `liftM` H.fetchAllVersions sourceConfig
+fetchVersionsFrom Hackage = toVersionInfos <$> H.fetchAllVersions sourceConfig
     where toVersionInfos :: Set (Text,Text) -> Set VersionInfo
           -- ^ possibly defined in Scoutess.Service.Source.Hackage?
           toVersionInfos  = undefined
@@ -107,7 +117,7 @@ calculateDependencies = liftScoutess $ \(targetSpec, versionSpec) ->
     let targetVersion :: VersionInfo
         targetVersion = undefined -- convert targetSpec into a VersionInfo
 
-        depMap :: Set (VersionInfo, (Set VersionInfo))
+        depMap :: Set (VersionInfo, Set VersionInfo)
         depMap = dependencyMap versionSpec targetVersion
 
         -- change the container types and transform all of the 'VersionInfo's
@@ -123,10 +133,11 @@ calculateDependencies = liftScoutess $ \(targetSpec, versionSpec) ->
     in return DependencyGraph {graph = depArr, association = bimap}
 
 -- | Return the immediate dependencies of a given 'VersionInfo'
+--   might be monadic instead of looking in 'VersionSpec'
 getImmDeps :: VersionSpec -> VersionInfo -> Set VersionInfo
 getImmDeps  = undefined
 
--- | Find the index of a VersionInfo (adding it to the 'Bimap' if it isn't found).
+-- | Find the index of a 'VersionInfo' (adding it to the 'Bimap' if it isn't found).
 getVersionIndex :: VersionInfo -> State (Bimap Int VersionInfo) Int
 getVersionIndex version = do
     bimap <- get
