@@ -4,12 +4,15 @@ module Scoutess.DataFlow where
 import Control.Applicative ((<$>))
 import Control.Arrow
 import Control.Category
-import Control.Monad.State (State, runState, get, put, execState)
+import Control.Monad (filterM)
+import Control.Monad.State (State, runState, get, put, gets)
 import Data.Array (Array, array)
 import Data.Bimap (Bimap)-- O(log n) bijection between 'Int's and 'VersionInfo's used in 'calculateDependencies'
 import qualified Data.Bimap as B
 import Data.Data (Typeable2, Data(..), mkNoRepType, gcast2)
 import Data.Graph (Graph, Vertex)
+import Data.Map (Map)
+import qualified Data.Map as M
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
@@ -114,51 +117,39 @@ fetchVersionsFrom  _      = undefined
 
 calculateDependencies :: Scoutess (TargetSpec, VersionSpec) DependencyGraph
 calculateDependencies = liftScoutess $ \(targetSpec, versionSpec) ->
-    let targetVersion :: VersionInfo
-        targetVersion = undefined -- convert targetSpec into a VersionInfo
-
-        depMap :: Set (VersionInfo, Set VersionInfo)
-        depMap = dependencyMap versionSpec targetVersion
-
-        -- change the container types and transform all of the 'VersionInfo's
-        -- into the corresponding 'Vertex'
-        toVersionInfos (v,deps) = do
-            v'    <- getVersionIndex v
-            deps' <- mapM getVersionIndex (S.toList deps)
-            return (v',deps')
-        (vertexList, bimap) = runState (mapM toVersionInfos (S.toList depMap)) B.empty
-        bounds = (0, B.size bimap -1)
-        depArr :: Array Vertex [Vertex]
-        depArr = array bounds vertexList
+    let targetVersion  :: VersionInfo
+        targetVersion   = undefined -- convert targetSpec into a VersionInfo
+        (depMap, bimap) = runState (dependencyMap versionSpec targetVersion) B.empty
+        bounds          = (0, B.size bimap -1)
+        depArr         :: Array Vertex [Vertex]
+        depArr          = array bounds (M.toList depMap)
     in return DependencyGraph {graph = depArr, association = bimap}
 
 -- | Return the immediate dependencies of a given 'VersionInfo'
 --   might be monadic instead of looking in 'VersionSpec'
-getImmDeps :: VersionSpec -> VersionInfo -> Set VersionInfo
+getImmDeps :: VersionSpec -> VersionInfo -> [VersionInfo]
 getImmDeps  = undefined
 
 -- | Find the index of a 'VersionInfo' (adding it to the 'Bimap' if it isn't found).
-getVersionIndex :: VersionInfo -> State (Bimap Int VersionInfo) Int
-getVersionIndex version = do
+getOrAddVersionIndex :: VersionInfo -> State (Bimap Vertex VersionInfo) Vertex
+getOrAddVersionIndex version = do
     bimap <- get
     let addNew = do
-        let ix = B.size bimap
-        put $ B.insert ix version bimap
-        return ix
+          let ix = B.size bimap
+          put $ B.insert ix version bimap
+          return ix
     maybe addNew return (B.lookupR version bimap)
 
--- | create a 'Set' consisting of all the required 'VersionInfo's and each of their dependencies
-dependencyMap :: VersionSpec -> VersionInfo -> Set (VersionInfo, (Set VersionInfo))
-dependencyMap spec version = execState (dependencyMap' spec version) S.empty
-    where
-    dependencyMap' :: VersionSpec -> VersionInfo -> State (Set (VersionInfo, (Set VersionInfo))) ()
-    dependencyMap' spec version = do
-        depMap <- get
-        let deps    = getImmDeps spec version
-            newDeps = deps S.\\ (S.map fst depMap) -- get rid of dependencies we've already seen
-            depMap' = S.insert (version, newDeps) depMap
-        put depMap'
-        mapM_ (dependencyMap' spec) (S.toList newDeps)
+-- | Returns a 'Map' from this 'VersionInfo''s 'Vertex' to the 'Vertex's corresponding to its dependencies
+--   while updating the index if needed.
+dependencyMap :: VersionSpec -> VersionInfo -> State (Bimap Vertex VersionInfo) (Map Vertex [Vertex])
+dependencyMap spec version = do
+    let deps = getImmDeps spec version
+    deps'    <- filterM (gets . B.notMemberR) deps
+    versionI <- getOrAddVersionIndex version
+    depsI    <- mapM getOrAddVersionIndex deps
+    depsM    <- mapM (dependencyMap spec) deps'
+    return $ M.insert versionI depsI (M.unions depsM)
 
 calculateChanges :: Scoutess (TargetSpec, PriorRun, DependencyGraph) BuildSpec
 calculateChanges = undefined
