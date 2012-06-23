@@ -1,9 +1,9 @@
-{-# LANGUAGE Arrows, GeneralizedNewtypeDeriving, StandaloneDeriving, DeriveDataTypeable #-}
+{-# LANGUAGE Arrows, GeneralizedNewtypeDeriving, StandaloneDeriving, DeriveDataTypeable, NamedFieldPuns #-}
 module Scoutess.DataFlow where
 
 import Control.Applicative ((<$>))
 import Control.Arrow
-import Control.Category
+import Control.Category (Category)
 import Control.Monad (filterM)
 import Control.Monad.State (State, runState, get, put, gets)
 import Data.Array (Array, array)
@@ -17,8 +17,7 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
 import Distribution.Package
-import Prelude hiding ((.), id)
-import qualified Prelude
+import Distribution.Version (VersionRange(..), withinRange)
 
 import qualified Scoutess.Service.Source.Hackage as H (fetchAllVersions)
 
@@ -33,7 +32,7 @@ data SourceSpec
       deriving Show
 
 data SourceLocation
-    = Darcs
+    = Darcs -- ^ need to specify a repo
     | LocalHackage
     | AlreadyGot
     | Hackage
@@ -55,9 +54,15 @@ data VersionSpec = VersionSpec
     deriving (Show, Eq, Ord)
 
 data VersionInfo = VersionInfo
-    {
+    { viPackageIdentifier :: PackageIdentifier
+    , viVersionTag        :: Text
+    , viSourceLocation    :: SourceLocation
+    , viDependencies      :: [Dependency]
     }
     deriving (Show, Eq, Ord)
+
+deriving instance Ord VersionRange
+deriving instance Ord Dependency
 
 data PriorRun = PriorRun
     {
@@ -70,12 +75,12 @@ data BuildSpec = BuildSpec
     deriving Show
 
 data DependencyGraph = DependencyGraph
-    { graph :: Graph
+    { graph       :: Graph
     , association :: Bimap Vertex VersionInfo
     }
 
 deriving instance Typeable2 Bimap
--- | Given that a 'Bimap' is just two 'Map's, this defintion is very similar to the one for 'Data.Map.Map'
+-- | Given that a 'Bimap' is just two 'Map's, this defintion is very similar to the one for 'Map'
 instance (Data a, Data b, Ord a, Ord b) => Data (Bimap a b) where
     gfoldl     f z m = z B.fromList `f` B.toList m
     toConstr   _     = error "toConstr"
@@ -126,9 +131,16 @@ calculateDependencies = liftScoutess $ \(targetSpec, versionSpec) ->
     in return DependencyGraph {graph = depArr, association = bimap}
 
 -- | Return the immediate dependencies of a given 'VersionInfo'
---   might be monadic instead of looking in 'VersionSpec'
+--   currently takes the highest valid dependency
 getImmDeps :: VersionSpec -> VersionInfo -> [VersionInfo]
-getImmDeps  = undefined
+getImmDeps (VersionSpec{versions}) (VersionInfo{viDependencies}) = map findDep viDependencies
+    where findDep dep = S.findMax (S.filter (fitsDep dep) versions)
+          -- ^ XXX: crashes with an unhelpful error if there are no valid dependencies
+          fitsDep :: Dependency -> VersionInfo -> Bool
+          fitsDep     (Dependency name range) vi = validName name vi && validVersion range vi
+          validName    name                   vi = name == pkgName (viPackageIdentifier vi)
+          validVersion range                  vi = withinRange (pkgVersion (viPackageIdentifier vi)) range
+
 
 -- | Find the index of a 'VersionInfo' (adding it to the 'Bimap' if it isn't found).
 getOrAddVersionIndex :: VersionInfo -> State (Bimap Vertex VersionInfo) Vertex
