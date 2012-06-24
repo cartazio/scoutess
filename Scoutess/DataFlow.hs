@@ -1,98 +1,25 @@
-{-# LANGUAGE Arrows, GeneralizedNewtypeDeriving, StandaloneDeriving, DeriveDataTypeable, NamedFieldPuns #-}
+{-# LANGUAGE Arrows, NamedFieldPuns #-}
 module Scoutess.DataFlow where
 
 import Control.Applicative ((<$>))
 import Control.Arrow
-import Control.Category (Category)
 import Control.Monad (filterM)
 import Control.Monad.State (State, runState, get, put, gets)
 import Data.Array (Array, array)
 import Data.Bimap (Bimap)-- O(log n) bijection between 'Int's and 'VersionInfo's used in 'calculateDependencies'
 import qualified Data.Bimap as B
-import Data.Data (Typeable2, Data(..), mkNoRepType, gcast2)
-import Data.Graph (Graph, Vertex)
+import Data.Graph (Vertex)
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Maybe (catMaybes)
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
 import Distribution.Package
-import Distribution.Version (VersionRange(..), withinRange)
+import Distribution.Version (withinRange)
 
 import qualified Scoutess.Service.Source.Hackage as H (fetchAllVersions)
-
-newtype Scoutess a b = Scoutess (Kleisli IO a b)
-    deriving (Category, Arrow, ArrowApply, ArrowChoice, ArrowLoop, ArrowPlus, ArrowZero)
-
-liftScoutess :: (a -> IO b) -> Scoutess a b
-liftScoutess = Scoutess . Kleisli
-
-data SourceSpec
-    = SourceSpec { locations :: Set SourceLocation }
-      deriving Show
-
-data SourceLocation
-    = Darcs -- ^ need to specify a repo
-    | LocalHackage
-    | AlreadyGot
-    | Hackage
-      deriving (Show, Eq, Ord)
-
-data TargetSpec = TargetSpec
-    {
-    }
-    deriving Show
-
-data BuildReport = BuildReport
-    {
-    }
-    deriving Show
-
-data VersionSpec = VersionSpec
-    { versions :: Set VersionInfo
-    }
-    deriving (Show, Eq, Ord)
-
-data VersionInfo = VersionInfo
-    { viPackageIdentifier :: PackageIdentifier
-    , viVersionTag        :: Text
-    , viSourceLocation    :: SourceLocation
-    , viDependencies      :: [Dependency]
-    }
-    deriving (Show, Eq, Ord)
-
-deriving instance Ord VersionRange
-deriving instance Ord Dependency
-
-data PriorRun = PriorRun
-    {
-    }
-    deriving Show
-
-data BuildSpec = BuildSpec
-    {
-    }
-    deriving Show
-
-data DependencyGraph = DependencyGraph
-    { graph       :: Graph
-    , association :: Bimap Vertex VersionInfo
-    }
-
-deriving instance Typeable2 Bimap
--- | Given that a 'Bimap' is just two 'Map's, this defintion is very similar to the one for 'Map'
-instance (Data a, Data b, Ord a, Ord b) => Data (Bimap a b) where
-    gfoldl     f z m = z B.fromList `f` B.toList m
-    toConstr   _     = error "toConstr"
-    gunfold    _ _   = error "gunfold"
-    dataTypeOf _     = mkNoRepType "Data.Bimap.Bimap"
-    dataCast2  f     = gcast2 f
-
-data LocalHackageIndex = LocalHackageIndex
-    {
-    }
-    deriving Show
-
+import Scoutess.Core
 
 -- standard build
 standard :: Scoutess SourceSpec SourceSpec -> Scoutess VersionSpec VersionSpec -> Scoutess (SourceSpec, TargetSpec, PriorRun) BuildReport
@@ -113,11 +40,8 @@ fetchVersions = liftScoutess $ \sourceSpec -> do
     return VersionSpec{versions = S.unions versionsL}
 
 fetchVersionsFrom :: SourceLocation -> IO (Set VersionInfo)
-fetchVersionsFrom Hackage = toVersionInfos <$> H.fetchAllVersions sourceConfig
-    where toVersionInfos :: Set (Text,Text) -> Set VersionInfo
-          -- ^ possibly defined in Scoutess.Service.Source.Hackage?
-          toVersionInfos  = undefined
-          sourceConfig    = undefined
+fetchVersionsFrom Hackage = H.fetchAllVersions sourceConfig
+          where sourceConfig = undefined
 fetchVersionsFrom  _      = undefined
 
 calculateDependencies :: Scoutess (TargetSpec, VersionSpec) DependencyGraph
@@ -131,15 +55,15 @@ calculateDependencies = liftScoutess $ \(targetSpec, versionSpec) ->
     in return DependencyGraph {graph = depArr, association = bimap}
 
 -- | Return the immediate dependencies of a given 'VersionInfo'
---   currently takes the highest valid dependency
+--   currently takes the highest valid dependency. If a dependency can't be found,
+--   it is silently ignored.
 getImmDeps :: VersionSpec -> VersionInfo -> [VersionInfo]
-getImmDeps (VersionSpec{versions}) (VersionInfo{viDependencies}) = map findDep viDependencies
-    where findDep dep = S.findMax (S.filter (fitsDep dep) versions)
-          -- ^ XXX: crashes with an unhelpful error if there are no valid dependencies
+getImmDeps (VersionSpec{versions}) (VersionInfo{viDependencies}) = catMaybes (map findDep viDependencies)
+    where findDep dep = fst <$> S.maxView (S.filter (fitsDep dep) versions)
           fitsDep :: Dependency -> VersionInfo -> Bool
-          fitsDep     (Dependency name range) vi = validName name vi && validVersion range vi
-          validName    name                   vi = name == pkgName (viPackageIdentifier vi)
-          validVersion range                  vi = withinRange (pkgVersion (viPackageIdentifier vi)) range
+          fitsDep      (Dependency name range) vi = validName name vi && validVersion range vi
+          validName    name                    vi = name == pkgName (viPackageIdentifier vi)
+          validVersion range                   vi = withinRange (pkgVersion (viPackageIdentifier vi)) range
 
 
 -- | Find the index of a 'VersionInfo' (adding it to the 'Bimap' if it isn't found).
