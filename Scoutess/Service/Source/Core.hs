@@ -25,6 +25,7 @@ data SourceLocation
     | Dir FilePath                        -- ^ get source from local directory
     | Hackage Text (Maybe Text)           -- ^ get source from hackage (optional version)
     | Hg Text                             -- ^ get source from mercurial
+    | Patch SourceLocation Text           -- ^ Apply the patch given in the 'Text' to the target
     | Quilt SourceLocation SourceLocation -- ^ get source and apply a quilt patch
     | Svn Text                            -- ^ get source from subversion
     | Tla Text                            -- ^ get source from tla
