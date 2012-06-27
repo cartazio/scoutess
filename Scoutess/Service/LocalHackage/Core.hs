@@ -7,13 +7,16 @@ import qualified Codec.Compression.GZip as GZ
 import qualified Data.ByteString.Lazy as L
 
 import Control.Monad                   (liftM, when)
+import Data.List                       (isSuffixOf)
 import Data.Text                       (Text, unpack)
+import Data.Version
 import Distribution.Package
 import Distribution.PackageDescription
 import System.Directory
 import System.FilePath                 ((</>), (<.>))
 import System.FilePath.Find            (always, find, fileName, extension, (==?))
 
+import Scoutess.Core
 import Scoutess.Service.Source.Core
 import Scoutess.Utils.Archives
 import Scoutess.Utils.Directory
@@ -27,15 +30,29 @@ data LocalHackage = LocalHackage { hackageDir    :: FilePath
 generateIndex :: LocalHackage -- ^ directory that contains the packages
               -> FilePath     -- ^ filepath for the output package index
               -> IO ()
-generateIndex hackage pkgIndex = do
+generateIndex = generateIndexSelectively Nothing
+
+-- | generates a package index from a (filtered) list of package archives
+generateIndexSelectively :: Maybe [VersionInfo] -- ^ if included, only put these packages in the index
+                         -> LocalHackage        -- ^ directory that contains the packages
+                         -> FilePath            -- ^ filepath for the output package index
+                         -> IO ()
+generateIndexSelectively mVersionInfos hackage pkgIndex = do
   let pkgsDir = hackageDir hackage
   cabals <- findCabalFiles pkgsDir
-  tarFiles (map (drop $ prefix pkgsDir) cabals) pkgsDir pkgIndex
-  tarGzipFiles (map (drop $ prefix pkgsDir) cabals) pkgsDir (pkgIndex ++ ".gz")
-
+  -- assume the cabal files have the filepath of .../pkgVersion/pkgName.cabal
+  let cabals' = maybe cabals (flip filter cabals . validCabal) mVersionInfos
+  tarFiles (map (drop $ prefix pkgsDir) cabals') pkgsDir pkgIndex
+  tarGzipFiles (map (drop $ prefix pkgsDir) cabals') pkgsDir (pkgIndex ++ ".gz")
   where prefix d = case last d == '/' of
           True  -> length d
           False -> length d + 1
+        toCabalDir :: VersionInfo -> FilePath
+        toCabalDir vi = version </> name <.> ".cabal"
+          where PackageName name = pkgName (viPackageIdentifier vi)
+                version = showVersion (pkgVersion (viPackageIdentifier vi))
+        validCabal :: [VersionInfo] -> FilePath -> Bool
+        validCabal versionInfos cabal = any (flip isSuffixOf cabal . toCabalDir) versionInfos
 
 -- | extracts a list of package (.tar.gz) archives to a given directory
 extractArchives :: [FilePath] -- ^ list of package archives (.tar.gz)
