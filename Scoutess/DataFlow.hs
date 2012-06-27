@@ -3,7 +3,7 @@ module Scoutess.DataFlow where
 
 import Control.Applicative ((<$>))
 import Control.Arrow
-import Control.Monad (filterM)
+import Control.Monad (filterM, (<=<))
 import Control.Monad.State (State, runState, get, put, gets)
 import Data.Array (Array, array)
 import Data.Bimap (Bimap)-- O(log n) bijection between 'Int's and 'VersionInfo's used in 'calculateDependencies'
@@ -20,9 +20,13 @@ import Distribution.Version (withinRange)
 
 import qualified Scoutess.Service.Source.Hackage as H (fetchAllVersions)
 import Scoutess.Core
+import Scoutess.Service.LocalHackage.Core
+import Scoutess.Service.Source.Core (SourceInfo)
 
 -- standard build
-standard :: Scoutess SourceSpec SourceSpec -> Scoutess VersionSpec VersionSpec -> Scoutess (SourceSpec, TargetSpec, PriorRun) BuildReport
+standard :: Scoutess SourceSpec SourceSpec    -- ^ sourceFilter
+         -> Scoutess VersionSpec VersionSpec  -- ^ versionFilter
+         -> Scoutess (SourceSpec, TargetSpec, PriorRun) BuildReport
 standard sourceFilter versionFilter =
     proc (sourceSpec, targetSpec, priorRun) ->
         do availableVersions  <- fetchVersions <<< sourceFilter -< sourceSpec
@@ -88,10 +92,26 @@ dependencyMap spec version = do
     return $ M.insert versionI depsI (M.unions depsM)
 
 calculateChanges :: Scoutess (TargetSpec, PriorRun, DependencyGraph) BuildSpec
-calculateChanges = undefined
+calculateChanges = liftScoutess $ \(targetSpec', proirRun, depGraph) -> do
+    let allPackages = S.fromAscList . map fst . B.toAscListR $ association depGraph
+    return BuildSpec {
+        targetSpec   = targetSpec'
+      , newDeps      = allPackages
+      , allDeps      = allPackages}
+        -- ^ currently will ignore priorRun and build everything
+        --   todo: take only from the graph, not the entire bimap
 
 updateLocalHackage :: Scoutess BuildSpec LocalHackageIndex
-updateLocalHackage = undefined
+updateLocalHackage = liftScoutess $ \buildSpec -> do
+    mapM (flip addPackage localHackage <=< getSource) (S.toList $ newDeps buildSpec)
+    generateIndexSelectively (Just . S.toList $ allDeps buildSpec) localHackage indexPath
+    return $ getLocalIndex indexPath
+    where localHackage   = undefined
+          indexPath      = undefined
+          getSource     :: VersionInfo -> IO SourceInfo
+          getSource      = undefined
+          getLocalIndex :: FilePath -> LocalHackageIndex
+          getLocalIndex  = undefined
 
 build :: Scoutess (LocalHackageIndex, BuildSpec) BuildReport
 build = undefined

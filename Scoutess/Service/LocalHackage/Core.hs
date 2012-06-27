@@ -1,6 +1,6 @@
 -- | This service is used to have a sort of local hackage-like package index, which basically means maintaining a package index containing the dependencies
 
-module Scoutess.Service.LocalHackage.Core (generateIndex, addPackage, LocalHackage(..)) where
+module Scoutess.Service.LocalHackage.Core (generateIndex, generateIndexSelectively, addPackage, LocalHackage(..)) where
 
 import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Compression.GZip as GZ
@@ -22,9 +22,10 @@ import Scoutess.Utils.Archives
 import Scoutess.Utils.Directory
 
 -- | The data type representing a local package repository
-data LocalHackage = LocalHackage { hackageDir    :: FilePath
-                                 , hackageTmpDir :: FilePath
-                                 }
+data LocalHackage = LocalHackage
+    { hackageDir    :: FilePath
+    , hackageTmpDir :: FilePath
+    } deriving Show
 
 -- | generates a package index from a list of package archives
 generateIndex :: LocalHackage -- ^ directory that contains the packages

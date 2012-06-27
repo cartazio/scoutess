@@ -65,7 +65,9 @@ data PriorRun = PriorRun
     deriving Show
 
 data BuildSpec = BuildSpec
-    {
+    { targetSpec   :: TargetSpec
+    , newDeps      :: Set VersionInfo
+    , allDeps      :: Set VersionInfo
     }
     deriving Show
 
