@@ -17,6 +17,8 @@ import qualified Data.Set as S
 import Data.Text (Text)
 import Distribution.Package
 import Distribution.Version (withinRange)
+import System.Cmd (system)
+import System.Directory
 
 import qualified Scoutess.Service.Source.Hackage as H (fetchAllVersions)
 import Scoutess.Core
@@ -94,8 +96,8 @@ dependencyMap spec version = do
 calculateChanges :: Scoutess (TargetSpec, PriorRun, DependencyGraph) BuildSpec
 calculateChanges = liftScoutess $ \(targetSpec', proirRun, depGraph) -> do
     let allPackages = S.fromAscList . map fst . B.toAscListR $ association depGraph
-    return BuildSpec {
-        targetSpec   = targetSpec'
+    return BuildSpec
+      { targetSpec   = targetSpec'
       , newDeps      = allPackages
       , allDeps      = allPackages}
         -- ^ currently will ignore priorRun and build everything
@@ -113,5 +115,26 @@ updateLocalHackage = liftScoutess $ \buildSpec -> do
           getLocalIndex :: FilePath -> LocalHackageIndex
           getLocalIndex  = undefined
 
+-- | sandboxing doesn't seem to work - user package-db was still recognised by cabal
 build :: Scoutess (LocalHackageIndex, BuildSpec) BuildReport
-build = undefined
+build = liftScoutess $ \(localHackageIndex, buildSpec) -> do
+    let sandboxDir  = (undefined :: BuildSpec -> FilePath) buildSpec
+        configFile  = (undefined :: BuildSpec -> FilePath) buildSpec
+        cabalFile   = (undefined :: BuildSpec -> FilePath) buildSpec
+    dirExists      <- doesDirectoryExist sandboxDir
+    if dirExists
+        then undefined
+        else system $ "ghc-pkg init " ++ sandboxDir
+    createCabalConfig configFile
+        -- local-repo:
+        -- verbose:
+        -- build-summary:
+    system $ "cabal --config-file=" ++ configFile
+                ++ " install " ++ cabalFile
+                ++ " --package-db=clear --package-db=" ++ sandboxDir
+        -- TODO: call the library rather than the shell
+    let buildReport = undefined
+        -- collect cabal's build report and the results of other processes
+    return buildReport
+    where createCabalConfig :: FilePath -> IO ()
+          createCabalConfig  = undefined
