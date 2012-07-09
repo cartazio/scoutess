@@ -16,9 +16,10 @@ import System.Cmd                                    (system)
 import System.Exit                                   (ExitCode(..))
 import System.FilePath                               ((</>))
 
-import Scoutess.Service.Source.Core (SourceConfig(..), SourceException(..), SourceInfo(..))
+import Scoutess.Core
 
 -- | fetch source using @darcs@
+--   XXX: use VersionInfo instead
 fetchDarcs :: (MonadIO m) =>
               SourceConfig -- ^ 'SourceConfig'
            -> Text         -- ^ location of darcs repo (e.g. @http:\/\/example.org\/repo@, @ssh:\/\/user\@example.org/srv/darcs/repo@)
@@ -37,10 +38,13 @@ fetchDarcs sourceConfig location maybeTag = do
         ExitSuccess   -> do
             genericPkgDesc <- readPackageDescription silent (destDir </> pkgName ++ ".cabal")
             let pkgDescr    = flattenPackageDescription genericPkgDesc
+                versionInfo = VersionInfo
+                    { viPackageDescription = pkgDescr
+                    , viVersionTag = toSrcVersion (specVersion pkgDescr)
+                    , viSourceLocation = Darcs location maybeTag}
             return . Right $ SourceInfo {
-                srcPath               = destDir
-              , srcPackageDescription = pkgDescr
-              , srcVersion            = toSrcVersion (specVersion pkgDescr) }
+                srcPath        = destDir
+              , srcVersionInfo = versionInfo}
     where
     -- remove all trailing '/', then assume that everything
     -- after the last '/' in location' is the package name

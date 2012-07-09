@@ -1,71 +1,37 @@
-Name:                scoutess
-Version:             0.1
-Synopsis:            A Haskell build bot for cabal-powered projects
--- Description:
-Homepage:            https://patch-tag.com/r/alpmestan/scoutess
-License:             BSD3
-License-file:        LICENSE
-Author:              Jeremy Shaw, Alp Mestanogullari
-Maintainer:          alpmestan@gmail.com
-Copyright:           2012 Jeremy Shaw, Alp Mestanogullari
-Category:            Testing
-Build-type:          Simple
-Cabal-version:       >=1.2
+name: scoutess
+version: 0.1
+cabal-version: >=1.2
+build-type: Simple
+license: BSD3
+license-file: LICENSE
+copyright: 2012 Jeremy Shaw, Alp Mestanogullari
+maintainer: alpmestan@gmail.com
+homepage: https://patch-tag.com/r/alpmestan/scoutess
+synopsis: A Haskell build bot for cabal-powered projects
+category: Testing
+author: Jeremy Shaw, Alp Mestanogullari
+data-dir: ""
 
-Library
-  Exposed-Modules:
-                     Control.Pipe.Process
-                     Scoutess.Config
-                     Scoutess.Server
-                     Scoutess.Service.Builder.Core
-                     Scoutess.Service.Haddock.Core
-                     Scoutess.Service.Haddock.CoreHaddock
-                     Scoutess.Service.LocalHackage.Core
-                     Scoutess.Service.PackDeps.Core
-                     Scoutess.Service.Source.Core
-                     Scoutess.Service.Source.Darcs
-                     Scoutess.Service.Source.Fetch
-                     Scoutess.Service.Source.Hackage
-                     Scoutess.Utils.Archives
-                     Scoutess.Utils.Cabal
-                     Scoutess.Utils.Directory
-                     Scoutess.Utils.Haddock
-                     Scoutess.Utils.HTTP
+library
+    build-depends: base <5, aeson ==0.6.*, bytestring ==0.9.*,
+                   Cabal ==1.14.*, directory ==1.1.*, filemanip ==0.3.*,
+                   filepath ==1.3.*, HTTP ==4000.2.*, mtl ==2.0.*, network ==2.3.*,
+                   packdeps ==0.3.*, pipes-core ==0.1.*, pipes-extra ==0.1.*,
+                   process ==1.1.*, safecopy ==0.6.*, stm >=2.2 && <2.4, tar ==0.4.*,
+                   text ==0.11.*, void ==0.5.*, zlib ==0.5.*
+    exposed-modules: Control.Pipe.Process Scoutess.Config
+                     Scoutess.DataFlow Scoutess.Server Scoutess.Service.Builder.Core
+                     Scoutess.Service.Haddock.Core Scoutess.Service.Haddock.CoreHaddock
+                     Scoutess.Service.LocalHackage.Core Scoutess.Service.PackDeps.Core
+                     Scoutess.Service.Source.Core Scoutess.Service.Source.Darcs
+                     Scoutess.Service.Source.Fetch Scoutess.Service.Source.Hackage
+                     Scoutess.Utils.Archives Scoutess.Utils.Cabal
+                     Scoutess.Utils.Directory Scoutess.Utils.Haddock Scoutess.Utils.HTTP
+    exposed: True
+    buildable: True
 
-  -- we require pipes-core/pipes-extra from github at the moment.
-  -- https://github.com/pcapriotti/pipes-core
-  -- https://github.com/pcapriotti/pipes-extra
-  Build-Depends:     base        < 5,
-                     aeson       == 0.6.*,
-                     bytestring  == 0.9.*,
-                     Cabal       == 1.14.*,
-                     directory   == 1.1.*,
-                     filemanip   == 0.3.*,
-                     filepath    == 1.3.*,
-                     HTTP        == 4000.2.*,
-                     mtl         == 2.0.*,
-                     network     == 2.3.*,
-                     packdeps    == 0.3.*,
-                     pipes-core  == 0.1.*,
-                     pipes-extra == 0.1.*,
-                     process     == 1.1.*,
-                     safecopy    == 0.6.*,
-                     stm         >= 2.2 && <2.4,
-                     tar         == 0.4.*,
-                     text        == 0.11.*,
-                     void        == 0.5.*,
-                     zlib        == 0.5.*
+executable scoutess
+    main-is: Main.hs
+    buildable: True
+    ghc-options: -O2 -threaded
 
-
-Executable scoutess
-  Main-is: Main.hs
-  GHC-Options: -O2 -threaded
-
-  -- Packages needed in order to build this package.
-  -- Build-depends:
-
-  -- Modules not exported by this package.
-  -- Other-modules:
-
-  -- Extra tools (e.g. alex, hsc2hs, ...) needed to build the source.
-  -- Build-tools:

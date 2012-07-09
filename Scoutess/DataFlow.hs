@@ -1,76 +1,79 @@
 {-# LANGUAGE Arrows, NamedFieldPuns #-}
 module Scoutess.DataFlow where
 
-import Control.Applicative ((<$>))
+import Control.Applicative                   ((<$>))
 import Control.Arrow
-import Control.Monad (filterM, (<=<))
-import Control.Monad.State (State, runState, get, put, gets)
-import Data.Array (Array, array)
-import Data.Bimap (Bimap)-- O(log n) bijection between 'Int's and 'VersionInfo's used in 'calculateDependencies'
+import Control.Monad                         (filterM, (<=<))
+import Control.Monad.State                   (State, runState, get, put, gets)
+import Data.Array                            (Array, array)
+import Data.Bimap                            (Bimap)
 import qualified Data.Bimap as B
-import Data.Graph (Vertex)
-import Data.Map (Map)
+import Data.Graph                            (Vertex)
+import Data.Map                              (Map)
 import qualified Data.Map as M
-import Data.Maybe (catMaybes)
-import Data.Set (Set)
+import Data.Maybe                            (catMaybes)
+import Data.Set                              (Set)
 import qualified Data.Set as S
-import Data.Text (Text)
 import Distribution.Package
-import Distribution.Version (withinRange)
-import System.Cmd (system)
-import System.Directory
+import Distribution.PackageDescription.Parse (readPackageDescription)
+import Distribution.Verbosity                (silent)
+import Distribution.Version                  (withinRange)
+import System.Cmd                            (system)
+import System.Directory                      (createDirectoryIfMissing, doesDirectoryExist)
+import System.FilePath                       ((</>),(<.>))
 
 import qualified Scoutess.Service.Source.Hackage as H (fetchAllVersions)
 import Scoutess.Core
 import Scoutess.Service.LocalHackage.Core
-import Scoutess.Service.Source.Core (SourceInfo)
+import Scoutess.Service.Source.Fetch (fetchSrc)
 
 -- standard build
 standard :: Scoutess SourceSpec SourceSpec    -- ^ sourceFilter
          -> Scoutess VersionSpec VersionSpec  -- ^ versionFilter
-         -> Scoutess (SourceSpec, TargetSpec, PriorRun) BuildReport
+         -> Scoutess (SourceSpec, TargetSpec, Maybe PriorRun) BuildReport
 standard sourceFilter versionFilter =
     proc (sourceSpec, targetSpec, priorRun) ->
-        do availableVersions  <- fetchVersions <<< sourceFilter -< sourceSpec
-           consideredVersions <- versionFilter                  -< availableVersions
-           dependencyGraph    <- calculateDependencies          -< (targetSpec, consideredVersions)
-           buildSpec          <- calculateChanges               -< (targetSpec, priorRun, dependencyGraph)
-           hackageIndex       <- updateLocalHackage             -< buildSpec
-           buildReport        <- build                          -< (hackageIndex, buildSpec)
+        do availableVersions  <- fetchVersions <<< second sourceFilter -< (targetSpec, sourceSpec)
+           consideredVersions <- versionFilter                         -< availableVersions
+           dependencyGraph    <- calculateDependencies                 -< (targetSpec, consideredVersions)
+           buildSpec          <- calculateChanges                      -< (targetSpec, priorRun, dependencyGraph)
+           hackageIndex       <- updateLocalHackage                    -< buildSpec
+           buildReport        <- build                                 -< (hackageIndex, buildSpec)
            returnA -< buildReport
 
-fetchVersions :: Scoutess SourceSpec VersionSpec
-fetchVersions = liftScoutess $ \sourceSpec -> do
+fetchVersions :: Scoutess (TargetSpec, SourceSpec) VersionSpec
+fetchVersions = liftScoutess $ \(targetSpec, sourceSpec) -> do
     let locations' = S.toList (locations sourceSpec)
-    versionsL <- mapM fetchVersionsFrom locations'
-    return VersionSpec{versions = S.unions versionsL}
+    versionsL <- mapM (fetchVersionsFrom targetSpec) locations'
+    return $ VersionSpec (S.unions versionsL)
 
-fetchVersionsFrom :: SourceLocation -> IO (Set VersionInfo)
-fetchVersionsFrom Hackage = H.fetchAllVersions sourceConfig
-          where sourceConfig = undefined
-fetchVersionsFrom  _      = undefined
+fetchVersionsFrom :: TargetSpec -> SourceLocation -> IO (Set VersionInfo)
+fetchVersionsFrom targetSpec Hackage = H.fetchAllVersions (tsSourceConfig targetSpec)
+fetchVersionsFrom _ _      = undefined
 
 calculateDependencies :: Scoutess (TargetSpec, VersionSpec) DependencyGraph
-calculateDependencies = liftScoutess $ \(targetSpec, versionSpec) ->
-    let targetVersion  :: VersionInfo
-        targetVersion   = undefined -- convert targetSpec into a VersionInfo
+calculateDependencies = liftScoutess $ \(targetSpec, versionSpec) -> do
+    cabalFile <- findCabalFile (tsSourceDir targetSpec)
+    gpd <- readPackageDescription silent cabalFile
+    let targetVersion   = createVersionInfo (Dir (tsSourceDir targetSpec)) gpd
         (depMap, bimap) = runState (dependencyMap versionSpec targetVersion) B.empty
         bounds          = (0, B.size bimap -1)
         depArr         :: Array Vertex [Vertex]
         depArr          = array bounds (M.toList depMap)
-    in return DependencyGraph {graph = depArr, association = bimap}
+    return DependencyGraph {graph = depArr, association = bimap}
 
 -- | Return the immediate dependencies of a given 'VersionInfo'
---   currently takes the highest valid dependency. If a dependency can't be found,
---   it is silently ignored.
+--   currently takes the highest valid dependency.
+--   XXX: if a dependency can't be found, it is silently
+--   ignored (cabal will then throw an error when compiling)
 getImmDeps :: VersionSpec -> VersionInfo -> [VersionInfo]
-getImmDeps (VersionSpec{versions}) (VersionInfo{viDependencies}) = catMaybes (map findDep viDependencies)
-    where findDep dep = fst <$> S.maxView (S.filter (fitsDep dep) versions)
-          fitsDep :: Dependency -> VersionInfo -> Bool
-          fitsDep      (Dependency name range) vi = validName name vi && validVersion range vi
-          validName    name                    vi = name == pkgName (viPackageIdentifier vi)
-          validVersion range                   vi = withinRange (pkgVersion (viPackageIdentifier vi)) range
-
+getImmDeps versionSpec = catMaybes . map findDep . viDependencies
+    where
+    findDep :: Dependency -> Maybe VersionInfo
+    findDep dep = fst <$> S.maxView (S.filter (fitsDep dep) (versions versionSpec))
+    fitsDep :: Dependency -> VersionInfo -> Bool
+    fitsDep (Dependency (PackageName name) range) vi =
+        (viName vi == name) && (viVersion vi `withinRange` range)
 
 -- | Find the index of a 'VersionInfo' (adding it to the 'Bimap' if it isn't found).
 getOrAddVersionIndex :: VersionInfo -> State (Bimap Vertex VersionInfo) Vertex
@@ -82,59 +85,69 @@ getOrAddVersionIndex version = do
           return ix
     maybe addNew return (B.lookupR version bimap)
 
--- | Returns a 'Map' from this 'VersionInfo''s 'Vertex' to the 'Vertex's corresponding to its dependencies
---   while updating the index if needed.
-dependencyMap :: VersionSpec -> VersionInfo -> State (Bimap Vertex VersionInfo) (Map Vertex [Vertex])
+-- | Adds the 'VersionInfo''s dependencies to the 'Bimap', then returns a dependency 'Map'.
+--   Note that the 'VersionInfo' itself is not in either the bimap or map.
+dependencyMap :: VersionSpec -> VersionInfo
+              -> State (Bimap Vertex VersionInfo) (Map Vertex [Vertex])
 dependencyMap spec version = do
+    let deps = getImmDeps spec version
+    M.unions <$> mapM (dependencyMap' spec) deps
+
+dependencyMap' :: VersionSpec -> VersionInfo
+               -> State (Bimap Vertex VersionInfo) (Map Vertex [Vertex])
+dependencyMap' spec version = do
     let deps = getImmDeps spec version
     deps'    <- filterM (gets . B.notMemberR) deps
     versionI <- getOrAddVersionIndex version
     depsI    <- mapM getOrAddVersionIndex deps
-    depsM    <- mapM (dependencyMap spec) deps'
+    depsM    <- mapM (dependencyMap' spec) deps'
     return $ M.insert versionI depsI (M.unions depsM)
 
-calculateChanges :: Scoutess (TargetSpec, PriorRun, DependencyGraph) BuildSpec
-calculateChanges = liftScoutess $ \(targetSpec', proirRun, depGraph) -> do
-    let allPackages = S.fromAscList . map fst . B.toAscListR $ association depGraph
+calculateChanges :: Scoutess (TargetSpec, Maybe PriorRun, DependencyGraph) BuildSpec
+calculateChanges = liftScoutess $ \(targetSpec, mPriorRun, depGraph) -> do
+    let allPackages = S.fromAscList . map fst . B.toAscListR . association $ depGraph
+        newPackages = case mPriorRun of
+            Just priorRun -> error "PriorRun not yet implemented"
+            Nothing       -> allPackages
     return BuildSpec
-      { targetSpec   = targetSpec'
-      , newDeps      = allPackages
-      , allDeps      = allPackages}
-        -- ^ currently will ignore priorRun and build everything
-        --   todo: take only from the graph, not the entire bimap
+      { bsTargetSpec = targetSpec
+      , bsNewDeps    = newPackages
+      , bsAllDeps    = allPackages}
 
 updateLocalHackage :: Scoutess BuildSpec LocalHackageIndex
 updateLocalHackage = liftScoutess $ \buildSpec -> do
-    mapM (flip addPackage localHackage <=< getSource) (S.toList $ newDeps buildSpec)
-    generateIndexSelectively (Just . S.toList $ allDeps buildSpec) localHackage indexPath
-    return $ getLocalIndex indexPath
-    where localHackage   = undefined
-          indexPath      = undefined
-          getSource     :: VersionInfo -> IO SourceInfo
-          getSource      = undefined
-          getLocalIndex :: FilePath -> LocalHackageIndex
-          getLocalIndex  = undefined
+    let localHackage = tsLocalHackage (bsTargetSpec buildSpec)
+        tmpDir       = tsTmpDir (bsTargetSpec buildSpec)
+        indexPath    = tmpDir </> "00-index.tar"
+        getSource   :: VersionInfo -> IO SourceInfo
+        getSource vi = either undefined id <$> fetchSrc (tsSourceConfig (bsTargetSpec buildSpec)) vi
+    createDirectoryIfMissing True tmpDir
+    mapM (flip addPackage localHackage <=< getSource) (S.toList (bsNewDeps buildSpec))
+    -- TODO: change this to fetchSrcs
+    generateIndexSelectively (Just . S.toList . bsAllDeps $ buildSpec) localHackage indexPath
+    return $ LocalHackageIndex (indexPath <.> ".gz")
 
 -- | sandboxing doesn't seem to work - user package-db was still recognised by cabal
 build :: Scoutess (LocalHackageIndex, BuildSpec) BuildReport
 build = liftScoutess $ \(localHackageIndex, buildSpec) -> do
-    let sandboxDir  = (undefined :: BuildSpec -> FilePath) buildSpec
-        configFile  = (undefined :: BuildSpec -> FilePath) buildSpec
-        cabalFile   = (undefined :: BuildSpec -> FilePath) buildSpec
-    dirExists      <- doesDirectoryExist sandboxDir
+    let targetSpec  = bsTargetSpec buildSpec
+        sandboxDir  = tsPackageDB targetSpec
+        configFile  = tsTmpDir targetSpec </> "config"
+    cabalFile <- findCabalFile (tsSourceDir targetSpec)
+    dirExists <- doesDirectoryExist sandboxDir
     if dirExists
-        then undefined
-        else system $ "ghc-pkg init " ++ sandboxDir
-    createCabalConfig configFile
-        -- local-repo:
-        -- verbose:
-        -- build-summary:
-    system $ "cabal --config-file=" ++ configFile
-                ++ " install " ++ cabalFile
-                ++ " --package-db=clear --package-db=" ++ sandboxDir
-        -- TODO: call the library rather than the shell
+        then error $ "Scoutess isn't currently caching from previous runs, please delete "
+                 ++ "\"" ++ sandboxDir ++ "\" and run again."
+        else system $ "ghc-pkg init \"" ++ sandboxDir ++ "\""
+    writeFile configFile $ unlines
+      [ "local-repo: " ++ hackageDir (tsLocalHackage (bsTargetSpec buildSpec))
+      , "build-summary: " ++ (tsTmpDir (bsTargetSpec buildSpec) </> "build.log")
+      , "remote-build-reporting: anonymous"]
+    let cabalCall = "cabal --config-file=\"" ++ configFile ++ "\""
+                ++ " install \"" ++ cabalFile ++ "\""
+                ++ " --package-db=clear --package-db=\"" ++ sandboxDir ++ "\""
+                ++ " --prefix=\"" ++ sandboxDir ++ "\""
+    system cabalCall
     let buildReport = undefined
         -- collect cabal's build report and the results of other processes
     return buildReport
-    where createCabalConfig :: FilePath -> IO ()
-          createCabalConfig  = undefined

@@ -4,7 +4,7 @@ module Scoutess.Service.Source.Fetch where
 import Control.Monad                   (liftM)
 import Control.Monad.Trans             (MonadIO(..))
 import Data.Either                     (partitionEithers)
-import Scoutess.Service.Source.Core    (SourceConfig, SourceException, SourceInfo, SourceLocation(..))
+import Scoutess.Core
 import Scoutess.Service.Source.Darcs   (fetchDarcs)
 import Scoutess.Service.Source.Hackage (fetchHackage)
 
@@ -30,12 +30,12 @@ import Scoutess.Service.Source.Hackage (fetchHackage)
 -- if some fail.
 fetchSrc :: (MonadIO m) =>
             SourceConfig
-         -> SourceLocation -- ^ spec for where to find the source
+         -> VersionInfo -- ^ spec for where to find the source
          -> m (Either SourceException SourceInfo)
-fetchSrc sourceConfig sourceLocation =
-    case sourceLocation of
-      (Darcs location mTag) -> fetchDarcs sourceConfig location mTag
-      (Hackage pkg mVer)    -> fetchHackage sourceConfig pkg mVer
+fetchSrc sourceConfig versionInfo =
+    case viSourceLocation versionInfo of
+      --(Darcs location mTag) -> fetchDarcs sourceConfig location mTag
+      Hackage               -> fetchHackage sourceConfig versionInfo
 
 -- | fetch multiple 'SourceLocation's
 --
@@ -44,7 +44,7 @@ fetchSrc sourceConfig sourceLocation =
 -- in the second element.
 fetchSrcs :: (MonadIO m) =>
              SourceConfig
-          -> [SourceLocation] -- ^ spec for where to find the source
+          -> [VersionInfo] -- ^ spec for where to find the source
           -> m ([SourceException], [SourceInfo])
-fetchSrcs sourceConfig sourceLocations =
-    liftM partitionEithers $ mapM (fetchSrc sourceConfig) sourceLocations
+fetchSrcs sourceConfig versionInfos =
+    liftM partitionEithers $ mapM (fetchSrc sourceConfig) versionInfos

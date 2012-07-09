@@ -2,30 +2,16 @@
 
 module Scoutess.Service.LocalHackage.Core (generateIndex, generateIndexSelectively, addPackage, LocalHackage(..)) where
 
-import qualified Codec.Archive.Tar as Tar
-import qualified Codec.Compression.GZip as GZ
-import qualified Data.ByteString.Lazy as L
-
-import Control.Monad                   (liftM, when)
+import Control.Monad                   (when)
 import Data.List                       (isSuffixOf)
-import Data.Text                       (Text, unpack)
+import Data.Text                       (unpack, pack)
 import Data.Version
-import Distribution.Package
-import Distribution.PackageDescription
 import System.Directory
 import System.FilePath                 ((</>), (<.>))
-import System.FilePath.Find            (always, find, fileName, extension, (==?))
 
 import Scoutess.Core
-import Scoutess.Service.Source.Core
 import Scoutess.Utils.Archives
 import Scoutess.Utils.Directory
-
--- | The data type representing a local package repository
-data LocalHackage = LocalHackage
-    { hackageDir    :: FilePath
-    , hackageTmpDir :: FilePath
-    } deriving Show
 
 -- | generates a package index from a list of package archives
 generateIndex :: LocalHackage -- ^ directory that contains the packages
@@ -49,9 +35,7 @@ generateIndexSelectively mVersionInfos hackage pkgIndex = do
           True  -> length d
           False -> length d + 1
         toCabalDir :: VersionInfo -> FilePath
-        toCabalDir vi = version </> name <.> ".cabal"
-          where PackageName name = pkgName (viPackageIdentifier vi)
-                version = showVersion (pkgVersion (viPackageIdentifier vi))
+        toCabalDir vi = showVersion (viVersion vi) </> viName vi <.> ".cabal"
         validCabal :: [VersionInfo] -> FilePath -> Bool
         validCabal versionInfos cabal = any (flip isSuffixOf cabal . toCabalDir) versionInfos
 
@@ -60,12 +44,6 @@ extractArchives :: [FilePath] -- ^ list of package archives (.tar.gz)
                 -> FilePath   -- ^ output directory
                 -> IO ()
 extractArchives archives dir = mapM_ (flip extractArchive dir) archives
-
--- | looks for all .cabal files in the provided directory and its subdirectories
-findCabalFiles :: FilePath      -- ^ where to start looking (recursively)
-               -> IO [FilePath] -- ^ the file paths to the .cabal files
-findCabalFiles = find recPred (extension ==? ".cabal")
-  where recPred = (`notElem` ["_darcs", ".git", "src", "tests", "test", "examples", "Data", "Control", "data"]) `liftM` fileName
 
 -- | Adds the package described by the given @SourceInfo@ to the hackage db
 --   If the same package and version already are in the db, does nothing
@@ -77,20 +55,19 @@ addPackage srcInfo hackage = do
   createDirectoryIfMissing True packageDir
   pkgVersionExists <- doesDirectoryExist packageVersionDir
   when (not pkgVersionExists) $ do
-    createDirectory packageVersionDir
+    createDirectoryIfMissing True packageVersionDir
     copyFile packageCabalFilePath $ packageVersionDir </> pkgN <.> ".cabal"
-    createDirectory tmpPackageDir
+    createDirectoryIfMissing True tmpPackageDir
     copyDir src tmpPackageDir
     tarGzipFiles [pkgIdent] (hackageTmpDir hackage) (packageVersionDir </> pkgIdent <.> ".tar.gz")
     removeDirectoryRecursive tmpPackageDir
     generateIndex hackage (hackageDir hackage </> "00-index.tar")
-
-  where (PackageName pkgN)    = pkgName . package . srcPackageDescription $ srcInfo
-        pkgVersion               = srcVersion srcInfo
-        tmpPackageDir            = hackageTmpDir hackage </> pkgIdent
-        packageDir               = hackageDir hackage </> pkgN
-        packageVersionDir        = packageDir </> unpack pkgVersion
-        packageCabalFilePath     = src </> pkgN <.> ".cabal"
-        packageArchivePath       = packageVersionDir </> pkgIdent <.> ".tar.gz"
-        src                      = srcPath srcInfo
-        pkgIdent                 = pkgN ++ "-" ++ unpack pkgVersion
+  where pkgN                 = srcName srcInfo
+        pkgV                 = pack . showVersion $ srcVersion srcInfo
+        tmpPackageDir        = hackageTmpDir hackage </> pkgIdent
+        packageDir           = hackageDir hackage </> pkgN
+        packageVersionDir    = packageDir </> unpack pkgV
+        packageCabalFilePath = src </> pkgN <.> ".cabal"
+        packageArchivePath   = packageVersionDir </> pkgIdent <.> ".tar.gz"
+        src                  = srcPath srcInfo
+        pkgIdent             = pkgN ++ "-" ++ unpack pkgV
