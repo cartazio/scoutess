@@ -18,14 +18,13 @@ import Distribution.Package
 import Distribution.PackageDescription.Parse (readPackageDescription)
 import Distribution.Verbosity                (silent)
 import Distribution.Version                  (withinRange)
-import System.Cmd                            (system)
+import System.Process                        (readProcessWithExitCode)
 import System.Directory                      (createDirectoryIfMissing, doesDirectoryExist)
 import System.FilePath                       ((</>),(<.>))
 
-import qualified Scoutess.Service.Source.Hackage as H (fetchAllVersions)
 import Scoutess.Core
 import Scoutess.Service.LocalHackage.Core
-import Scoutess.Service.Source.Fetch (fetchSrc)
+import Scoutess.Service.Source.Fetch         (fetchSrcs, fetchVersions)
 
 -- standard build
 standard :: Scoutess SourceSpec SourceSpec    -- ^ sourceFilter
@@ -33,7 +32,7 @@ standard :: Scoutess SourceSpec SourceSpec    -- ^ sourceFilter
          -> Scoutess (SourceSpec, TargetSpec, Maybe PriorRun) BuildReport
 standard sourceFilter versionFilter =
     proc (sourceSpec, targetSpec, priorRun) ->
-        do availableVersions  <- fetchVersions <<< second sourceFilter -< (targetSpec, sourceSpec)
+        do availableVersions  <- fetchVersions' <<< second sourceFilter -< (targetSpec, sourceSpec)
            consideredVersions <- versionFilter                         -< availableVersions
            dependencyGraph    <- calculateDependencies                 -< (targetSpec, consideredVersions)
            buildSpec          <- calculateChanges                      -< (targetSpec, priorRun, dependencyGraph)
@@ -41,15 +40,11 @@ standard sourceFilter versionFilter =
            buildReport        <- build                                 -< (hackageIndex, buildSpec)
            returnA -< buildReport
 
-fetchVersions :: Scoutess (TargetSpec, SourceSpec) VersionSpec
-fetchVersions = liftScoutess $ \(targetSpec, sourceSpec) -> do
+fetchVersions' :: Scoutess (TargetSpec, SourceSpec) VersionSpec
+fetchVersions' = liftScoutess $ \(targetSpec, sourceSpec) -> do
     let locations' = S.toList (locations sourceSpec)
-    versionsL <- mapM (fetchVersionsFrom targetSpec) locations'
-    return $ VersionSpec (S.unions versionsL)
-
-fetchVersionsFrom :: TargetSpec -> SourceLocation -> IO (Set VersionInfo)
-fetchVersionsFrom targetSpec Hackage = H.fetchAllVersions (tsSourceConfig targetSpec)
-fetchVersionsFrom _ _      = undefined
+    (errors, versionss) <- fetchVersions (tsSourceConfig targetSpec) locations'
+    return . VersionSpec . S.unions $ versionss
 
 calculateDependencies :: Scoutess (TargetSpec, VersionSpec) DependencyGraph
 calculateDependencies = liftScoutess $ \(targetSpec, versionSpec) -> do
@@ -119,12 +114,12 @@ updateLocalHackage = liftScoutess $ \buildSpec -> do
     let localHackage = tsLocalHackage (bsTargetSpec buildSpec)
         tmpDir       = tsTmpDir (bsTargetSpec buildSpec)
         indexPath    = tmpDir </> "00-index.tar"
-        getSource   :: VersionInfo -> IO SourceInfo
-        getSource vi = either undefined id <$> fetchSrc (tsSourceConfig (bsTargetSpec buildSpec)) vi
+        sourceConfig = tsSourceConfig (bsTargetSpec buildSpec)
     createDirectoryIfMissing True tmpDir
-    mapM (flip addPackage localHackage <=< getSource) (S.toList (bsNewDeps buildSpec))
-    -- TODO: change this to fetchSrcs
+    (errors, sourceInfos) <- fetchSrcs sourceConfig (S.toList (bsNewDeps buildSpec))
+    mapM_ (flip addPackage localHackage) sourceInfos
     generateIndexSelectively (Just . S.toList . bsAllDeps $ buildSpec) localHackage indexPath
+    -- TODO: give this index to cabal without disrupting the main index in the repo
     return $ LocalHackageIndex (indexPath <.> ".gz")
 
 -- | sandboxing doesn't seem to work - user package-db was still recognised by cabal
@@ -135,19 +130,22 @@ build = liftScoutess $ \(localHackageIndex, buildSpec) -> do
         configFile  = tsTmpDir targetSpec </> "config"
     cabalFile <- findCabalFile (tsSourceDir targetSpec)
     dirExists <- doesDirectoryExist sandboxDir
-    if dirExists
+    (ghcPkgExitCode, ghcPkgOut, ghcPkgErr) <- if dirExists
         then error $ "Scoutess isn't currently caching from previous runs, please delete "
                  ++ "\"" ++ sandboxDir ++ "\" and run again."
-        else system $ "ghc-pkg init \"" ++ sandboxDir ++ "\""
+        else readProcessWithExitCode "ghc-pkg" ["init", "\"" ++ sandboxDir ++ "\""] []
     writeFile configFile $ unlines
       [ "local-repo: " ++ hackageDir (tsLocalHackage (bsTargetSpec buildSpec))
       , "build-summary: " ++ (tsTmpDir (bsTargetSpec buildSpec) </> "build.log")
       , "remote-build-reporting: anonymous"]
-    let cabalCall = "cabal --config-file=\"" ++ configFile ++ "\""
-                ++ " install \"" ++ cabalFile ++ "\""
-                ++ " --package-db=clear --package-db=\"" ++ sandboxDir ++ "\""
-                ++ " --prefix=\"" ++ sandboxDir ++ "\""
-    system cabalCall
+    -- TODO: allow custom cabal args
+    let cabalArgs = ["--config-file=\"" ++ configFile ++ "\""
+                    ,"install"
+                    ,"\"" ++ cabalFile ++ "\""
+                    ,"--package-db=clear"
+                    ,"--package-db=\"" ++ sandboxDir ++ "\""
+                    ,"--prefix=\"" ++ sandboxDir ++ "\""]
+    (cabalExitCode, cabalOut, cabalErr) <- readProcessWithExitCode "cabal" cabalArgs []
     let buildReport = undefined
-        -- collect cabal's build report and the results of other processes
+    -- TODO: collect cabal's build report and the results of other processes
     return buildReport

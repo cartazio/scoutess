@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, NamedFieldPuns #-}
 -- | fetch packages from hackage using @Network.HTTP@
 
-module Scoutess.Service.Source.Hackage (fetchHackage, fetchAllVersions) where
+module Scoutess.Service.Source.Hackage (fetchHackage, fetchVersionsHackage) where
 
 import Control.Monad.Trans                   (MonadIO(..), liftIO)
 import Data.Text                             (Text)
@@ -47,21 +47,21 @@ fetchHackage sourceConfig versionInfo = do
     Nothing -> return . Left $ SourceErrorOther "Couldn't download the package archive. Please check that your connection and the hackage.haskell.org server are up."
 
 -- | Creates a VersionInfo for each package on Hackage and returns them in a Set
-fetchAllVersions :: (MonadIO m) =>
+fetchVersionsHackage :: (MonadIO m) =>
                   SourceConfig -- ^ 'SourceConfig' defining where the 00-index is to be stored
-               -> m (Set VersionInfo)
-fetchAllVersions sourceConfig = do
+               -> m (Either SourceException (Set VersionInfo))
+fetchVersionsHackage sourceConfig = do
   dirExist <- liftIO $ doesDirectoryExist tmpDir
   if dirExist
-    then error "directory given to fetchAllVersions already exists" -- perhaps come up with a new name and try that?
+    then error "directory given to fetchAllVersions already exists" -- TODO: perhaps come up with a new name and try that? Or wipe the dir and continue
     else liftIO $ createDirectoryIfMissing True tmpDir
   pkgIndex' <- liftIO $ downloadFile "http://hackage.haskell.org/packages/archive/00-index.tar.gz" (tmpDir </> "00-index.tar.gz")
   case pkgIndex' of
-    Nothing       -> return S.empty
+    Nothing       -> return . Left . SourceErrorOther $ "Couldn't download the package index."
     Just pkgIndex -> do
       liftIO $ extractArchive pkgIndex tmpDir
       cabals              <- liftIO $ findCabalFiles tmpDir
       packageDescriptions <- liftIO $ mapM (readPackageDescription silent) cabals
       liftIO $ removeDirectoryRecursive tmpDir
-      return . S.fromList . map (createVersionInfo Hackage) $ packageDescriptions
+      return . Right . S.fromList . map (createVersionInfo Hackage) $ packageDescriptions
   where tmpDir = srcCacheDir sourceConfig </> "tmp"

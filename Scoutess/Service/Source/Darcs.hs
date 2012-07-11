@@ -4,53 +4,48 @@
 -- <http://darcs.net>
 module Scoutess.Service.Source.Darcs where
 
-import Control.Monad.Trans                           (MonadIO(..), liftIO)
-import Data.Text                                     (Text)
-import qualified Data.Text as Text                   (dropWhileEnd, pack, unpack, breakOnEnd, append)
-import Distribution.PackageDescription               (specVersion)
-import Distribution.PackageDescription.Configuration (flattenPackageDescription)
-import Distribution.PackageDescription.Parse         (readPackageDescription)
-import Distribution.Verbosity                        (silent)
-import Distribution.Version                          (Version)
-import System.Cmd                                    (system)
-import System.Exit                                   (ExitCode(..))
-import System.FilePath                               ((</>))
+import Control.Monad.Trans         (MonadIO(..), liftIO)
+import Data.Text                   (Text)
+import qualified Data.Text as Text (dropWhileEnd, unpack)
+import Data.Set                    (Set)
+import Distribution.Version        (Version)
+import System.Exit                 (ExitCode(..))
+import System.FilePath             ((</>))
+import System.Process              (readProcessWithExitCode)
 
 import Scoutess.Core
 
 -- | fetch source using @darcs@
---   XXX: use VersionInfo instead
+--   TODO: If we have already downloaded the source to get its version,
+--   can we use that? How can we be sure it's the same source?
 fetchDarcs :: (MonadIO m) =>
               SourceConfig -- ^ 'SourceConfig'
-           -> Text         -- ^ location of darcs repo (e.g. @http:\/\/example.org\/repo@, @ssh:\/\/user\@example.org/srv/darcs/repo@)
-           -> Maybe Text   -- ^ optional darcs tag
+           -> VersionInfo
            -> m (Either SourceException SourceInfo)
-fetchDarcs sourceConfig location maybeTag = do
+fetchDarcs sourceConfig versionInfo = do
+    let (Darcs location maybeTag) = viSourceLocation versionInfo
+        args = ["get", "\"" ++ Text.unpack location ++ "\""
+               ,"--repo-name=\"" ++ destDir ++ "\""]
+                  ++ case maybeTag of
+                    Nothing  -> []
+                    Just tag -> ["--tag =\"" ++ Text.unpack tag ++ "\""]
     -- escape the command line arguments?
-    exitCode <- liftIO . system . Text.unpack $
-            "darcs get "    ++. location
-        ++. " --repo-name=" ++. "\"" ++. Text.pack destDir ++. "\""
-        ++. case maybeTag of
-            Nothing  -> ""
-            Just tag -> "--tag =" ++. "\"" ++. tag ++. "\""
+    (exitCode, out, err) <- liftIO $ readProcessWithExitCode "darcs" args []
     liftIO $ case exitCode of
         ExitFailure _ -> return . Left $ SourceErrorOther "Couldn't download the package. Please check your connection and the repo location."
         ExitSuccess   -> do
-            genericPkgDesc <- readPackageDescription silent (destDir </> pkgName ++ ".cabal")
-            let pkgDescr    = flattenPackageDescription genericPkgDesc
-                versionInfo = VersionInfo
-                    { viPackageDescription = pkgDescr
-                    , viVersionTag = toSrcVersion (specVersion pkgDescr)
-                    , viSourceLocation = Darcs location maybeTag}
             return . Right $ SourceInfo {
                 srcPath        = destDir
               , srcVersionInfo = versionInfo}
     where
-    -- remove all trailing '/', then assume that everything
-    -- after the last '/' in location' is the package name
-    location'     = Text.dropWhileEnd (=='/') location
-    pkgName       = Text.unpack . snd $ Text.breakOnEnd (Text.pack "/") location'
-    destDir       = srcCacheDir sourceConfig </> pkgName
-    toSrcVersion :: Version -> Text
-    toSrcVersion  = undefined
-    (++.)         = Text.append
+    destDir = srcCacheDir sourceConfig </> viName versionInfo
+
+fetchVersionsDarcs :: (MonadIO m) =>
+                      SourceConfig
+                   -> SourceLocation
+                   -> m (Either SourceException (Set VersionInfo))
+fetchVersionsDarcs = do
+    -- 'get' the repo
+    -- look for the cabal file
+    -- create the VersionInfo (leaving the repo behind?)
+    undefined

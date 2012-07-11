@@ -1,6 +1,6 @@
 -- | 'dataFlow sourceDir sandboxDir' runs Scoutess.
 --   The package to build and its cabal file needs to be in sourceDir
---   Note that currently some temporary files are left behind om sandboxDir
+--   Note that currently some temporary files are left behind in sandboxDir
 --   that must be deleted before running it again.
 
 import Control.Arrow      (arr)
