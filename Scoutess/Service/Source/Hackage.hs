@@ -30,7 +30,7 @@ fetchHackage :: (MonadIO m) =>
              -> VersionInfo
              -> m (Either SourceException SourceInfo)
 fetchHackage sourceConfig versionInfo = do
-  let pkgName    = Text.pack (viName versionInfo)
+  let pkgName    = Text.pack . viName $ versionInfo
       pkgVersion = Text.pack . showVersion . viVersion $ versionInfo
       pkgUrl     = packageUrl pkgName pkgVersion
       localPath  = srcCacheDir sourceConfig </> (Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion ++ ".tar.gz")
@@ -51,17 +51,14 @@ fetchVersionsHackage :: (MonadIO m) =>
                   SourceConfig -- ^ 'SourceConfig' defining where the 00-index is to be stored
                -> m (Either SourceException (Set VersionInfo))
 fetchVersionsHackage sourceConfig = do
-  dirExist <- liftIO $ doesDirectoryExist tmpDir
-  if dirExist
-    then error "directory given to fetchAllVersions already exists" -- TODO: perhaps come up with a new name and try that? Or wipe the dir and continue
-    else liftIO $ createDirectoryIfMissing True tmpDir
-  pkgIndex' <- liftIO $ downloadFile "http://hackage.haskell.org/packages/archive/00-index.tar.gz" (tmpDir </> "00-index.tar.gz")
+  liftIO $ createDirectoryIfMissing True (srcCacheDir sourceConfig)
+  pkgIndex' <- liftIO $ updateFile "http://hackage.haskell.org/packages/archive/00-index.tar.gz" (srcCacheDir sourceConfig </> "00-index.tar.gz")
   case pkgIndex' of
     Nothing       -> return . Left . SourceErrorOther $ "Couldn't download the package index."
     Just pkgIndex -> do
-      liftIO $ extractArchive pkgIndex tmpDir
+      liftIO $ extractArchive pkgIndex (tmpDir </> "unpack")
       cabals              <- liftIO $ findCabalFiles tmpDir
       packageDescriptions <- liftIO $ mapM (readPackageDescription silent) cabals
-      liftIO $ removeDirectoryRecursive tmpDir
+      liftIO $ removeDirectoryRecursive (tmpDir </> "unpack")
       return . Right . S.fromList . map (createVersionInfo Hackage) $ packageDescriptions
   where tmpDir = srcCacheDir sourceConfig </> "tmp"

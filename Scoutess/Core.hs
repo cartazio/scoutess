@@ -215,11 +215,10 @@ findCabalFiles = find recPred (extension ==? ".cabal")
   where recPred = (`notElem` ["_darcs", ".git", "src", "tests", "test", "examples", "Data", "Control", "data"]) <$> fileName
 
 -- | looks for a single .cabal file in the given directory and returns its filepath
-findCabalFile :: FilePath -> IO FilePath
+findCabalFile :: FilePath -> IO (Maybe FilePath)
 findCabalFile fp = do
     cabals <- find (depth ==? 0) (extension ==? ".cabal") fp
-    case cabals of
-        []  -> error $ "No" ++ msg
-        [x] -> return x
-        _   -> error $ "Multiple" ++ msg
-    where msg = " cabal files found in " ++ fp
+    return $ case cabals of
+        []  -> Nothing
+        [x] -> Just x
+        _   -> Nothing

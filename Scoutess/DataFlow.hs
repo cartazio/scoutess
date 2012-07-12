@@ -3,7 +3,7 @@ module Scoutess.DataFlow where
 
 import Control.Applicative                   ((<$>))
 import Control.Arrow
-import Control.Monad                         (filterM, (<=<))
+import Control.Monad                         (filterM, when)
 import Control.Monad.State                   (State, runState, get, put, gets)
 import Data.Array                            (Array, array)
 import Data.Bimap                            (Bimap)
@@ -19,7 +19,7 @@ import Distribution.PackageDescription.Parse (readPackageDescription)
 import Distribution.Verbosity                (silent)
 import Distribution.Version                  (withinRange)
 import System.Process                        (readProcessWithExitCode)
-import System.Directory                      (createDirectoryIfMissing, doesDirectoryExist)
+import System.Directory                      (createDirectoryIfMissing, doesDirectoryExist, removeDirectoryRecursive)
 import System.FilePath                       ((</>),(<.>))
 
 import Scoutess.Core
@@ -48,7 +48,7 @@ fetchVersions' = liftScoutess $ \(targetSpec, sourceSpec) -> do
 
 calculateDependencies :: Scoutess (TargetSpec, VersionSpec) DependencyGraph
 calculateDependencies = liftScoutess $ \(targetSpec, versionSpec) -> do
-    cabalFile <- findCabalFile (tsSourceDir targetSpec)
+    (Just cabalFile) <- findCabalFile (tsSourceDir targetSpec)
     gpd <- readPackageDescription silent cabalFile
     let targetVersion   = createVersionInfo (Dir (tsSourceDir targetSpec)) gpd
         (depMap, bimap) = runState (dependencyMap versionSpec targetVersion) B.empty
@@ -119,7 +119,6 @@ updateLocalHackage = liftScoutess $ \buildSpec -> do
     (errors, sourceInfos) <- fetchSrcs sourceConfig (S.toList (bsNewDeps buildSpec))
     mapM_ (flip addPackage localHackage) sourceInfos
     generateIndexSelectively (Just . S.toList . bsAllDeps $ buildSpec) localHackage indexPath
-    -- TODO: give this index to cabal without disrupting the main index in the repo
     return $ LocalHackageIndex (indexPath <.> ".gz")
 
 -- | sandboxing doesn't seem to work - user package-db was still recognised by cabal
@@ -128,12 +127,11 @@ build = liftScoutess $ \(localHackageIndex, buildSpec) -> do
     let targetSpec  = bsTargetSpec buildSpec
         sandboxDir  = tsPackageDB targetSpec
         configFile  = tsTmpDir targetSpec </> "config"
-    cabalFile <- findCabalFile (tsSourceDir targetSpec)
+    Just cabalFile <- findCabalFile (tsSourceDir targetSpec)
     dirExists <- doesDirectoryExist sandboxDir
-    (ghcPkgExitCode, ghcPkgOut, ghcPkgErr) <- if dirExists
-        then error $ "Scoutess isn't currently caching from previous runs, please delete "
-                 ++ "\"" ++ sandboxDir ++ "\" and run again."
-        else readProcessWithExitCode "ghc-pkg" ["init", "\"" ++ sandboxDir ++ "\""] []
+    when (dirExists) (removeDirectoryRecursive sandboxDir)
+    (ghcPkgExitCode, ghcPkgOut, ghcPkgErr) <-
+        readProcessWithExitCode "ghc-pkg" ["init", "\"" ++ sandboxDir ++ "\""] []
     writeFile configFile $ unlines
       [ "local-repo: " ++ hackageDir (tsLocalHackage (bsTargetSpec buildSpec))
       , "build-summary: " ++ (tsTmpDir (bsTargetSpec buildSpec) </> "build.log")
