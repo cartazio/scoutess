@@ -7,8 +7,9 @@ import Data.Either                     (partitionEithers)
 import Data.Set                        (Set)
 
 import Scoutess.Core
-import Scoutess.Service.Source.Darcs   (fetchDarcs, fetchVersionsDarcs)
+import Scoutess.Service.Source.Darcs   (fetchDarcs  , fetchVersionsDarcs)
 import Scoutess.Service.Source.Hackage (fetchHackage, fetchVersionsHackage)
+import Scoutess.Service.Source.Dir     (fetchDir    , fetchVersionsDir)
 
 -- | fetch the source
 --
@@ -54,15 +55,17 @@ fetchSrcs sourceConfig versionInfos =
 fetchVersion :: (MonadIO m) =>
                 SourceConfig
              -> SourceLocation
-             -> m (Either SourceException (Set VersionInfo))
+             -> m (Either SourceException VersionSpec)
 fetchVersion sourceConfig Hackage =
     fetchVersionsHackage sourceConfig
 fetchVersion sourceConfig sourceLoc@(Darcs _ _) =
     fetchVersionsDarcs sourceConfig sourceLoc
+fetchVersion sourceConfig sourceLoc@(Dir _) = 
+    fetchVersionsDir sourceLoc
 
 fetchVersions :: (MonadIO m) =>
                  SourceConfig
               -> [SourceLocation]
-              -> m ([SourceException], [Set VersionInfo])
+              -> m ([SourceException], [VersionSpec])
 fetchVersions sourceConfig sourceLocations =
     partitionEithers `liftM` mapM (fetchVersion sourceConfig) sourceLocations

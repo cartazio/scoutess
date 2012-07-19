@@ -24,7 +24,7 @@ import System.FilePath                       ((</>),(<.>))
 
 import Scoutess.Core
 import Scoutess.Service.LocalHackage.Core
-import Scoutess.Service.Source.Fetch         (fetchSrcs, fetchVersions)
+import Scoutess.Service.Source.Fetch         (fetchSrcs, fetchVersion, fetchVersions)
 
 -- standard build
 standard :: Scoutess SourceSpec SourceSpec    -- ^ sourceFilter
@@ -32,26 +32,38 @@ standard :: Scoutess SourceSpec SourceSpec    -- ^ sourceFilter
          -> Scoutess (SourceSpec, TargetSpec, Maybe PriorRun) BuildReport
 standard sourceFilter versionFilter =
     proc (sourceSpec, targetSpec, priorRun) ->
-        do availableVersions  <- fetchVersions' <<< second sourceFilter -< (targetSpec, sourceSpec)
-           consideredVersions <- versionFilter                         -< availableVersions
-           dependencyGraph    <- calculateDependencies                 -< (targetSpec, consideredVersions)
-           buildSpec          <- calculateChanges                      -< (targetSpec, priorRun, dependencyGraph)
-           hackageIndex       <- updateLocalHackage                    -< buildSpec
-           buildReport        <- build                                 -< (hackageIndex, buildSpec)
+        do (availableVersions, targetVersion)
+                              <- fetchVersionSpec sourceFilter -< (targetSpec, sourceSpec)
+           consideredVersions <- versionFilter                 -< availableVersions
+           dependencyGraph    <- calculateDependencies         -< (targetSpec, targetVersion, consideredVersions)
+           buildSpec          <- calculateChanges              -< (targetSpec, priorRun, dependencyGraph)
+           hackageIndex       <- updateLocalHackage            -< buildSpec
+           buildReport        <- build                         -< (hackageIndex, buildSpec)
            returnA -< buildReport
 
-fetchVersions' :: Scoutess (TargetSpec, SourceSpec) VersionSpec
-fetchVersions' = liftScoutess $ \(targetSpec, sourceSpec) -> do
-    let locations' = S.toList (locations sourceSpec)
-    (errors, versionss) <- fetchVersions (tsSourceConfig targetSpec) locations'
-    return . VersionSpec . S.unions $ versionss
+-- TODO: test and handle errors
+-- | fetch the 'VersionSpec' for the dependencies and the 'VersionInfo' for the target package.
+--   Note that the dependencies are fetched from the filtered 'SourceSpec' while the target is
+--   from the unfiltered 'SourceSpec'.
+fetchVersionSpec :: Scoutess SourceSpec SourceSpec -> Scoutess (TargetSpec, SourceSpec) (VersionSpec, VersionInfo)
+fetchVersionSpec sourceFilter = liftScoutess $ \(targetSpec, sourceSpec) -> do
+    let (name, version, location) = tsNameVersionLocation targetSpec
+    filteredSources <- S.toList . locations <$> runScoutess sourceFilter sourceSpec
+    if location `elem` filteredSources
+      then do
+        (errors, versionSpecs) <- fetchVersions (tsSourceConfig targetSpec) filteredSources
+        let combined = combineVersionSpecs versionSpecs
+        let Just targetVersion = findVersion name version location combined
+        return (combined, targetVersion)
+      else do
+        (errors, versionSpecs) <- fetchVersions (tsSourceConfig targetSpec) filteredSources
+        eitherTargetVersionSpec <- fetchVersion (tsSourceConfig targetSpec) location
+        let Just targetVersion = either (error "could not find the target") (findVersion name version location) eitherTargetVersionSpec
+        return (combineVersionSpecs versionSpecs, targetVersion)
 
-calculateDependencies :: Scoutess (TargetSpec, VersionSpec) DependencyGraph
-calculateDependencies = liftScoutess $ \(targetSpec, versionSpec) -> do
-    (Just cabalFile) <- findCabalFile (tsSourceDir targetSpec)
-    gpd <- readPackageDescription silent cabalFile
-    let targetVersion   = createVersionInfo (Dir (tsSourceDir targetSpec)) gpd
-        (depMap, bimap) = runState (dependencyMap versionSpec targetVersion) B.empty
+calculateDependencies :: Scoutess (TargetSpec, VersionInfo, VersionSpec) DependencyGraph
+calculateDependencies = liftScoutess $ \(targetSpec, targetVersion, versionSpec) -> do
+    let (depMap, bimap) = runState (dependencyMap versionSpec targetVersion) B.empty
         bounds          = (0, B.size bimap -1)
         depArr         :: Array Vertex [Vertex]
         depArr          = array bounds (M.toList depMap)
@@ -71,8 +83,8 @@ getImmDeps versionSpec = catMaybes . map findDep . viDependencies
         (viName vi == name) && (viVersion vi `withinRange` range)
 
 -- | Find the index of a 'VersionInfo' (adding it to the 'Bimap' if it isn't found).
-getOrAddVersionIndex :: VersionInfo -> State (Bimap Vertex VersionInfo) Vertex
-getOrAddVersionIndex version = do
+getVersionIndex :: VersionInfo -> State (Bimap Vertex VersionInfo) Vertex
+getVersionIndex version = do
     bimap <- get
     let addNew = do
           let ix = B.size bimap
@@ -80,30 +92,23 @@ getOrAddVersionIndex version = do
           return ix
     maybe addNew return (B.lookupR version bimap)
 
--- | Adds the 'VersionInfo''s dependencies to the 'Bimap', then returns a dependency 'Map'.
---   Note that the 'VersionInfo' itself is not in either the bimap or map.
+-- | Adds the 'VersionInfo' and its dependencies to the 'Bimap', then returns a 'Map' from the vertex for each
+--   package to the vertices of its dependencies.
 dependencyMap :: VersionSpec -> VersionInfo
               -> State (Bimap Vertex VersionInfo) (Map Vertex [Vertex])
 dependencyMap spec version = do
     let deps = getImmDeps spec version
-    M.unions <$> mapM (dependencyMap' spec) deps
-
-dependencyMap' :: VersionSpec -> VersionInfo
-               -> State (Bimap Vertex VersionInfo) (Map Vertex [Vertex])
-dependencyMap' spec version = do
-    let deps = getImmDeps spec version
-    deps'    <- filterM (gets . B.notMemberR) deps
-    versionI <- getOrAddVersionIndex version
-    depsI    <- mapM getOrAddVersionIndex deps
-    depsM    <- mapM (dependencyMap' spec) deps'
-    return $ M.insert versionI depsI (M.unions depsM)
+    unseenDeps <- filterM (gets . B.notMemberR) deps
+    index      <- getVersionIndex version
+    depIndices <- mapM getVersionIndex deps
+    depMaps    <- mapM (dependencyMap spec) unseenDeps
+    return $ M.insert index depIndices (M.unions depMaps)
 
 calculateChanges :: Scoutess (TargetSpec, Maybe PriorRun, DependencyGraph) BuildSpec
 calculateChanges = liftScoutess $ \(targetSpec, mPriorRun, depGraph) -> do
     let allPackages = S.fromAscList . map fst . B.toAscListR . association $ depGraph
-        newPackages = case mPriorRun of
-            Just priorRun -> error "PriorRun not yet implemented"
-            Nothing       -> allPackages
+        newPackages = maybe allPackages (const err) mPriorRun
+        err         = error "PriorRun not yet implemented"
     return BuildSpec
       { bsTargetSpec = targetSpec
       , bsNewDeps    = newPackages
@@ -126,23 +131,24 @@ build :: Scoutess (LocalHackageIndex, BuildSpec) BuildReport
 build = liftScoutess $ \(localHackageIndex, buildSpec) -> do
     let targetSpec  = bsTargetSpec buildSpec
         sandboxDir  = tsPackageDB targetSpec
+        installDir  = sandboxDir
         configFile  = tsTmpDir targetSpec </> "config"
-    Just cabalFile <- findCabalFile (tsSourceDir targetSpec)
+        targetCabal = undefined
     dirExists <- doesDirectoryExist sandboxDir
     when (dirExists) (removeDirectoryRecursive sandboxDir)
     (ghcPkgExitCode, ghcPkgOut, ghcPkgErr) <-
-        readProcessWithExitCode "ghc-pkg" ["init", "\"" ++ sandboxDir ++ "\""] []
+        readProcessWithExitCode "ghc-pkg" ["init", sandboxDir] []
     writeFile configFile $ unlines
       [ "local-repo: " ++ hackageDir (tsLocalHackage (bsTargetSpec buildSpec))
       , "build-summary: " ++ (tsTmpDir (bsTargetSpec buildSpec) </> "build.log")
       , "remote-build-reporting: anonymous"]
     -- TODO: allow custom cabal args
-    let cabalArgs = ["--config-file=\"" ++ configFile ++ "\""
+    let cabalArgs = ["--config-file=" ++ configFile
                     ,"install"
-                    ,"\"" ++ cabalFile ++ "\""
+                    ,targetCabal
                     ,"--package-db=clear"
-                    ,"--package-db=\"" ++ sandboxDir ++ "\""
-                    ,"--prefix=\"" ++ sandboxDir ++ "\""]
+                    ,"--package-db=" ++ sandboxDir
+                    ,"--prefix=" ++ installDir]
     (cabalExitCode, cabalOut, cabalErr) <- readProcessWithExitCode "cabal" cabalArgs []
     let buildReport = undefined
     -- TODO: collect cabal's build report and the results of other processes

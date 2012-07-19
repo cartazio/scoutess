@@ -46,10 +46,10 @@ fetchHackage sourceConfig versionInfo = do
                                   , srcVersionInfo = versionInfo}
     Nothing -> return . Left $ SourceErrorOther "Couldn't download the package archive. Please check that your connection and the hackage.haskell.org server are up."
 
--- | Creates a VersionInfo for each package on Hackage and returns them in a Set
+-- | Creates a VersionInfo for each package on Hackage and returns them in a VersionSpec
 fetchVersionsHackage :: (MonadIO m) =>
                   SourceConfig -- ^ 'SourceConfig' defining where the 00-index is to be stored
-               -> m (Either SourceException (Set VersionInfo))
+               -> m (Either SourceException VersionSpec)
 fetchVersionsHackage sourceConfig = do
   liftIO $ createDirectoryIfMissing True (srcCacheDir sourceConfig)
   pkgIndex' <- liftIO $ updateFile "http://hackage.haskell.org/packages/archive/00-index.tar.gz" (srcCacheDir sourceConfig </> "00-index.tar.gz")
@@ -60,5 +60,5 @@ fetchVersionsHackage sourceConfig = do
       cabals              <- liftIO $ findCabalFiles tmpDir
       packageDescriptions <- liftIO $ mapM (readPackageDescription silent) cabals
       liftIO $ removeDirectoryRecursive (tmpDir </> "unpack")
-      return . Right . S.fromList . map (createVersionInfo Hackage) $ packageDescriptions
+      return . Right . VersionSpec . S.fromList . map (createVersionInfo Hackage) $ packageDescriptions
   where tmpDir = srcCacheDir sourceConfig </> "tmp"

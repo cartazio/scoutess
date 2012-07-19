@@ -13,8 +13,10 @@ import Control.Monad.Error  (Error(..))
 import Data.Bimap           (Bimap)
 import qualified Data.Bimap as B
 import Data.Data            (Typeable, Typeable2, Data(..), mkNoRepType, gcast2)
+import Data.Function        (on)
 import Data.Graph           (Graph, Vertex)
 import Data.Set             (Set)
+import qualified Data.Set as S
 import Data.Text            (Text)
 import qualified Data.Text as T
 import Data.Version         (showVersion)
@@ -92,6 +94,9 @@ data VersionSpec = VersionSpec
     }
     deriving (Show, Eq, Ord)
 
+combineVersionSpecs :: [VersionSpec] -> VersionSpec
+combineVersionSpecs = VersionSpec . S.unions . map versions
+
 -----------------
 -- Other types --
 -----------------
@@ -125,11 +130,13 @@ instance Error SourceException where
 instance Exception SourceException
 
 -- | return a human readable error message
-sourceErrorMsg :: SourceException  -- ^ error
-               -> Text         -- ^ error message
+sourceErrorMsg :: SourceException -- ^ error
+               -> Text            -- ^ error message
 sourceErrorMsg (SourceErrorOther txt) = txt
 sourceErrorMsg (SourceErrorUnknown)   = "unknown source error"
 
+-- TODO: just including the TargetSpec seems like a hack, which
+-- parts of it are actually used?
 data BuildSpec = BuildSpec
     { bsTargetSpec   :: TargetSpec
     , bsNewDeps      :: Set VersionInfo
@@ -139,11 +146,11 @@ data BuildSpec = BuildSpec
 
 -- | The initial input to scoutess
 data TargetSpec = TargetSpec
-    { tsSourceDir    :: FilePath     -- ^ path to the source (with cabal file) to build from
-    , tsTmpDir       :: FilePath     -- ^ a directory that scoutess will put temporary files in
-    , tsLocalHackage :: LocalHackage -- ^ the local hackage repo
-    , tsPackageDB    :: FilePath     -- ^ the directory to be used as a package-db
-    , tsSourceConfig :: SourceConfig -- ^ the directory to unpack things from repos in
+    { tsNameVersionLocation :: (Text, Text, SourceLocation) -- ^ the name, version and location of the target package
+    , tsTmpDir              :: FilePath                     -- ^ a directory that scoutess will put temporary files in
+    , tsLocalHackage        :: LocalHackage                 -- ^ the local hackage repo
+    , tsPackageDB           :: FilePath                     -- ^ the directory to be used as a package-db
+    , tsSourceConfig        :: SourceConfig                 -- ^ the directory to unpack things from repos in
     }
     deriving Show
 
@@ -180,6 +187,11 @@ data LocalHackageIndex = LocalHackageIndex
 -- Helper functions --
 ----------------------
 
+(.:) :: (c -> d) -> (a -> b -> c) -> a -> b -> d
+(.:) = (.).(.)
+infixr 9 .:
+
+
 viName :: VersionInfo -> String
 viName = (\(PackageName n) -> n) . pkgName . package . viPackageDescription
 
@@ -197,6 +209,19 @@ srcVersion = viVersion . srcVersionInfo
 
 srcDependencies :: SourceInfo -> [Dependency]
 srcDependencies = viDependencies . srcVersionInfo
+
+-- | Finds a 'VersionInfo' for a package from a 'VersionSpec'
+
+findVersion :: Text           -- ^ package name
+            -> Text           -- ^ package version
+            -> SourceLocation -- ^ package location
+            -> VersionSpec    -- ^ VersionSpec to search in
+            -> Maybe VersionInfo
+findVersion name version location = (fst <$>) . S.maxView . S.filter isTarget . versions
+    where
+    isTarget vi = T.unpack name == viName vi &&
+                  T.unpack version == showVersion (viVersion vi) &&
+                  location == viSourceLocation vi
 
 createVersionInfo :: SourceLocation -> GenericPackageDescription -> VersionInfo
 createVersionInfo sourceLocation gpd = versionInfo
