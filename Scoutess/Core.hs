@@ -15,15 +15,18 @@ import qualified Data.Bimap as B
 import Data.Data            (Typeable, Typeable2, Data(..), mkNoRepType, gcast2)
 import Data.Function        (on)
 import Data.Graph           (Graph, Vertex)
+import qualified Data.Map as M
 import Data.Set             (Set)
 import qualified Data.Set as S
 import Data.Text            (Text)
 import qualified Data.Text as T
 import Data.Version         (showVersion)
+import Debug.Trace          (trace)
 import Distribution.Package
 import Distribution.PackageDescription
 import Distribution.PackageDescription.Configuration (flattenPackageDescription)
 import Distribution.Version (Version)
+import System.Exit (ExitCode(..))
 import System.FilePath.Find (find, fileName, extension, (==?), depth)
 
 --------------------
@@ -57,7 +60,7 @@ data SourceInfo = SourceInfo
     { srcPath         :: FilePath           -- ^ path to the directory that contains the .cabal file
     , srcVersionInfo  :: VersionInfo        -- ^ information about the source
     }
-    deriving (Read, Show, Typeable)
+    deriving (Read, Show, Typeable, Eq, Ord)
 
 -- | 'Eq' and 'Ord' will ignore the 'PackageDescription'. 'Ord' because it isn't an instance
 --   naturally and 'Eq' in order to make 'Ord' consistent.
@@ -89,6 +92,9 @@ data SourceSpec
     = SourceSpec { locations :: Set SourceLocation }
       deriving Show
 
+filterSourceSpec :: (SourceLocation -> Bool) -> SourceSpec -> SourceSpec
+filterSourceSpec p = SourceSpec . S.filter p . locations
+
 data VersionSpec = VersionSpec
     { versions :: Set VersionInfo
     }
@@ -96,6 +102,10 @@ data VersionSpec = VersionSpec
 
 combineVersionSpecs :: [VersionSpec] -> VersionSpec
 combineVersionSpecs = VersionSpec . S.unions . map versions
+
+data BuildSources = BuildSources
+    { targetSource :: SourceInfo
+    , depSources   :: Set SourceInfo }
 
 -----------------
 -- Other types --
@@ -135,12 +145,11 @@ sourceErrorMsg :: SourceException -- ^ error
 sourceErrorMsg (SourceErrorOther txt) = txt
 sourceErrorMsg (SourceErrorUnknown)   = "unknown source error"
 
--- TODO: just including the TargetSpec seems like a hack, which
--- parts of it are actually used?
 data BuildSpec = BuildSpec
     { bsTargetSpec   :: TargetSpec
-    , bsNewDeps      :: Set VersionInfo
-    , bsAllDeps      :: Set VersionInfo
+    , bsDepGraph     :: DependencyGraph
+    , bsPriorRun     :: Maybe PriorRun
+    , bsToBuild      :: Bool
     }
     deriving Show
 
@@ -151,23 +160,70 @@ data TargetSpec = TargetSpec
     , tsLocalHackage        :: LocalHackage                 -- ^ the local hackage repo
     , tsPackageDB           :: FilePath                     -- ^ the directory to be used as a package-db
     , tsSourceConfig        :: SourceConfig                 -- ^ the directory to unpack things from repos in
+    , tsCustomCabalArgs     :: [Text]                       -- ^ any additional arguments to pass to cabal
     }
     deriving Show
 
+-- | Any errors or exceptions encountered when fetching the versions or the sources
+data RecordedExceptions = RecordedExceptions
+    { versionExceptions :: Set SourceException
+    , sourceExceptions  :: Maybe (Set SourceException)
+    }
+    deriving (Eq, Ord, Show, Read)
+
+
+-- | 1) details of the target package
+--   2) details of the dependencies (the dep graph, any errors returned when fetching)
+--   3) the difference between the prior build and this one (to see if a new version of a dependency caused a build failure and so on)
+--   4) the exitCode, stdOut and stdErr from calling cabal
 data BuildReport = BuildReport
-    {
+    { brTarget          :: VersionInfo                   -- ^ the version info of the target that was built
+    , brDependencyGraph :: DependencyGraph               -- ^ the dependency graph produced during the build
+    , brExceptions      :: RecordedExceptions            -- ^ any errors produced when fetching the versions or sources.
+    , brPriorRun        :: Maybe PriorRun                -- ^ the 'PriorRun' this build was given at the start (NOT the one produced by this build)
+    , brCabalResults    :: Maybe (ExitCode, Text, Text, Text)
+      -- ^ The exit code, standard out, standard error and the contents of the log file produced by calling cabal
     }
     deriving Show
+
+brSucceeded :: BuildReport -> Bool
+brSucceeded = maybe False wasSuccess . brCabalResults
+    where
+    wasSuccess :: (ExitCode, Text, Text, Text) -> Bool
+    wasSuccess (ExitSuccess, _, _, _) = True
+    wasSuccess _                      = False
 
 data PriorRun = PriorRun
-    {
+    { prTarget     :: VersionInfo
+    , prDepGraph   :: DependencyGraph
     }
     deriving Show
+
+toPriorRun :: BuildReport -> PriorRun
+toPriorRun br = PriorRun target depGraph
+    where
+    target   = brTarget br
+    depGraph = brDependencyGraph br
+
+-- | if there is no prior run or the target of the prior run is
+--   different to that of the build report, return Nothing.
+--   Otherwise, return the difference between the dependencies
+findDifference :: BuildReport -> Maybe (Set VersionInfo)
+findDifference br = brPriorRun br >>= difference
+    where
+    allDeps = undefined
+    difference pr | prTarget pr == brTarget br = undefined
+    -- if the target is the same then look for
+    -- packages or versions in the build report
+    -- but not in the prior run
 
 data DependencyGraph = DependencyGraph
     { graph       :: Graph
     , association :: Bimap Vertex VersionInfo
     } deriving Show
+
+dgVersionInfos :: DependencyGraph -> Set VersionInfo
+dgVersionInfos = M.keysSet . B.toMapR . association
 
 deriving instance Typeable2 Bimap
 -- | Given that a 'Bimap' is just two 'Map's, this defintion is very similar to the one for 'Map'
@@ -217,11 +273,12 @@ findVersion :: Text           -- ^ package name
             -> SourceLocation -- ^ package location
             -> VersionSpec    -- ^ VersionSpec to search in
             -> Maybe VersionInfo
-findVersion name version location = (fst <$>) . S.maxView . S.filter isTarget . versions
+findVersion name version location vs = (fst <$>) . S.maxView . S.filter isTarget . versions $ vs
     where
-    isTarget vi = T.unpack name == viName vi &&
-                  T.unpack version == showVersion (viVersion vi) &&
-                  location == viSourceLocation vi
+    isTarget vi =
+        T.unpack name == viName vi &&
+        T.unpack version == showVersion (viVersion vi) &&
+        location == viSourceLocation vi
 
 createVersionInfo :: SourceLocation -> GenericPackageDescription -> VersionInfo
 createVersionInfo sourceLocation gpd = versionInfo

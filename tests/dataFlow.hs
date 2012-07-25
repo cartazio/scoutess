@@ -5,29 +5,32 @@
 
 import Control.Arrow       (arr)
 import Control.Applicative ((<$>))
-import Data.Set            (singleton, fromList)
+import Data.Set            (singleton, fromList, filter)
 import Data.Text           (Text, pack)
 import System.Environment  (getArgs)
 import System.FilePath     ((</>))
+
+import Prelude hiding (filter)
 
 import Scoutess.Core
 import Scoutess.DataFlow
 
 main :: IO ()
-main = do
-    args <- getArgs
-    case args of
-        [name, version, locationStr, sandboxDir, sourceLocationFile] -> do
-                sourceSpec <- SourceSpec . fromList . map read . lines <$> readFile sourceLocationFile
-                let targetSpec = makeTargetSpec (pack name) (pack version) (read locationStr) sandboxDir
-                runScoutess (standard allowAll allowAll)
-                            (sourceSpec, targetSpec, Nothing)
-                putStrLn "Scoutess finished"
-        _ -> printUsage
+main = getArgs >>= \args -> case args of
+    [name, version, locationStr, sandboxDir, sourceLocationFile] -> do
+        sourceSpec <- SourceSpec . fromList . map read . lines <$> readFile sourceLocationFile
+        let targetSpec = makeTargetSpec (pack name) (pack version) (read locationStr) sandboxDir
+        runScoutess (standard onlyAllowHackage allowAll)
+                    (sourceSpec, targetSpec, Nothing)
+        putStrLn "Scoutess done"
+    _ -> printUsage
 
 
 allowAll :: Scoutess a a
 allowAll = arr id
+
+onlyAllowHackage :: Scoutess SourceSpec SourceSpec
+onlyAllowHackage = liftScoutess (return . filterSourceSpec (== Hackage))
 
 printUsage :: IO ()
 printUsage = putStrLn . unlines $
@@ -40,8 +43,9 @@ printUsage = putStrLn . unlines $
 makeTargetSpec :: Text -> Text -> SourceLocation -> FilePath -> TargetSpec
 makeTargetSpec name version location sandboxDir = TargetSpec
     { tsNameVersionLocation = (name, version, location)
-    , tsTmpDir         = sandboxDir </> "temp"
-    , tsLocalHackage   = LocalHackage (sandboxDir </> "localHackage") (sandboxDir </> "localHackage" </> "temp")
-    , tsPackageDB      = sandboxDir </> "package-cache"
-    , tsSourceConfig   = SourceConfig (sandboxDir </> "srcCacheDir")
+    , tsTmpDir              = sandboxDir </> "temp"
+    , tsLocalHackage        = LocalHackage (sandboxDir </> "localHackage") (sandboxDir </> "localHackage" </> "temp")
+    , tsPackageDB           = sandboxDir </> "package-cache"
+    , tsSourceConfig        = SourceConfig (sandboxDir </> "srcCacheDir")
+    , tsCustomCabalArgs     = []
     }

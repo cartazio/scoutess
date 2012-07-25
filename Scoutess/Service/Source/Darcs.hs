@@ -20,8 +20,6 @@ import System.Process                        (readProcessWithExitCode)
 import Scoutess.Core
 
 -- | fetch source using @darcs@
---   TODO: If we have already downloaded the source to get its version,
---   can we use that? How can we be sure it's the same source?
 fetchDarcs :: (MonadIO m) =>
               SourceConfig -- ^ 'SourceConfig'
            -> VersionInfo
@@ -29,12 +27,12 @@ fetchDarcs :: (MonadIO m) =>
 fetchDarcs sourceConfig versionInfo = do
     preFetched <- liftIO $ doesDirectoryExist destDir
     if not preFetched
-      then do
+    then do
         (exitCode, out, err) <- callDarcs (viSourceLocation versionInfo) destDir
         return $ case exitCode of
             ExitFailure _ -> Left . SourceErrorOther . pack $ err
             ExitSuccess   -> Right sourceInfo
-      else return (Right sourceInfo)
+    else return (Right sourceInfo)
     where
     destDir = srcCacheDir sourceConfig </> (viName versionInfo ++ "-" ++ showVersion (viVersion versionInfo))
     sourceInfo = SourceInfo destDir versionInfo

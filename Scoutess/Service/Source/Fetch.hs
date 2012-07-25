@@ -60,7 +60,7 @@ fetchVersion sourceConfig Hackage =
     fetchVersionsHackage sourceConfig
 fetchVersion sourceConfig sourceLoc@(Darcs _ _) =
     fetchVersionsDarcs sourceConfig sourceLoc
-fetchVersion sourceConfig sourceLoc@(Dir _) = 
+fetchVersion sourceConfig sourceLoc@(Dir _) =
     fetchVersionsDir sourceLoc
 
 fetchVersions :: (MonadIO m) =>

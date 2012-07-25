@@ -1,8 +1,8 @@
 -- | This service is used to have a sort of local hackage-like package index, which basically means maintaining a package index containing the dependencies
 
-module Scoutess.Service.LocalHackage.Core (generateIndex, generateIndexSelectively, addPackage, LocalHackage(..)) where
+module Scoutess.Service.LocalHackage.Core (generateIndex, generateIndexSelectively, addPackage, LocalHackage(..), clearLocalHackage) where
 
-import Control.Monad                   (when)
+import Control.Monad                   (when, forM_)
 import Data.List                       (isSuffixOf)
 import Data.Text                       (unpack, pack)
 import Data.Version
@@ -71,3 +71,10 @@ addPackage srcInfo hackage = do
         packageArchivePath   = packageVersionDir </> pkgIdent <.> ".tar.gz"
         src                  = srcPath srcInfo
         pkgIdent             = pkgN ++ "-" ++ unpack pkgV
+
+clearLocalHackage :: LocalHackage -> IO ()
+clearLocalHackage (LocalHackage hackageFp hackageTempFp) = do
+    forM_ [hackageFp, hackageTempFp] $ \filePath -> do
+        filePathExists <- doesDirectoryExist filePath
+        when filePathExists (removeDirectoryRecursive filePath)
+        createDirectoryIfMissing True filePath

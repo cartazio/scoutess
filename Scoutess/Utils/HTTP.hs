@@ -5,7 +5,8 @@ module Scoutess.Utils.HTTP (downloadFile, updateFile) where
 import Network.HTTP
 import Network.HTTP.Base (defaultGETRequest_)
 import Network.URI       (parseURI, URI)
-import System.Directory  (doesFileExist, getModificationTime)
+import System.Directory  (createDirectoryIfMissing, doesFileExist, getModificationTime)
+import System.FilePath   (dropFileName)
 import System.Locale     (defaultTimeLocale, rfc822DateFormat)
 import System.Time       (ctTZName, formatCalendarTime, toUTCTime)
 
@@ -51,16 +52,16 @@ updateFile' :: URI -> FilePath -> IO (Maybe FilePath)
 updateFile' uri dest = do
     fileExists <- doesFileExist dest
     if fileExists
-      then do
+    then do
         modifiedDate <- lastModified dest
         let setHeader = insertHeader HdrIfModifiedSince modifiedDate
         ersp <- simpleHTTP . setHeader . defaultGETRequest_ $ uri
         case ersp of
             Right rsp | rspCode rsp == (2,0,0)
-                -> BS.writeFile dest (rspBody rsp)
+                -> createDirectoryIfMissing True (dropFileName dest) >> BS.writeFile dest (rspBody rsp)
             _   -> return ()
         return (Just dest)
-      else downloadFile' uri dest
+    else downloadFile' uri dest
 
 -- | returns the last modifed date of the file in RFC 822 format
 lastModified :: FilePath -> IO String

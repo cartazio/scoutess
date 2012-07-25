@@ -30,21 +30,23 @@ fetchHackage :: (MonadIO m) =>
              -> VersionInfo
              -> m (Either SourceException SourceInfo)
 fetchHackage sourceConfig versionInfo = do
-  let pkgName    = Text.pack . viName $ versionInfo
-      pkgVersion = Text.pack . showVersion . viVersion $ versionInfo
-      pkgUrl     = packageUrl pkgName pkgVersion
-      localPath  = srcCacheDir sourceConfig </> (Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion ++ ".tar.gz")
-  dledPath <- liftIO $ downloadFile pkgUrl localPath
-  case dledPath of
-    Just _ -> do
-      let destDir = srcCacheDir sourceConfig </> Text.unpack pkgName
-      liftIO $ createDirectoryIfMissing True destDir
-      liftIO $ extractArchive localPath destDir
-      liftIO $ renameDirectory (destDir </> Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion) (destDir </> Text.unpack pkgVersion)
-      liftIO $ removeFile localPath
-      return . Right $ SourceInfo { srcPath        = destDir </> Text.unpack pkgVersion
-                                  , srcVersionInfo = versionInfo}
-    Nothing -> return . Left $ SourceErrorOther "Couldn't download the package archive. Please check that your connection and the hackage.haskell.org server are up."
+-- TODO: clean up
+    let pkgName      = Text.pack . viName $ versionInfo
+        pkgVersion   = Text.pack . showVersion . viVersion $ versionInfo
+        pkgUrl       = packageUrl pkgName pkgVersion
+        archiveLoc   = srcCacheDir sourceConfig </> (Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion ++ ".tar.gz")
+        destDir      = srcCacheDir sourceConfig </> Text.unpack pkgName
+        fullCacheDir = destDir </> Text.unpack pkgVersion
+    cacheExists <- liftIO $ doesDirectoryExist fullCacheDir
+    if cacheExists
+    then return . Right $ SourceInfo fullCacheDir versionInfo
+    else liftIO $ downloadFile pkgUrl archiveLoc >>= \mDledPath -> case mDledPath of
+        Just dledPath -> liftIO $ do
+            createDirectoryIfMissing True destDir
+            extractArchive dledPath destDir
+            renameDirectory (destDir </> Text.unpack pkgName ++ "-" ++ Text.unpack pkgVersion) fullCacheDir
+            return . Right $ SourceInfo fullCacheDir versionInfo
+        Nothing -> return . Left $ SourceErrorOther "Couldn't download the package archive. Please check that your connection and the hackage.haskell.org server are up."
 
 -- | Creates a VersionInfo for each package on Hackage and returns them in a VersionSpec
 fetchVersionsHackage :: (MonadIO m) =>

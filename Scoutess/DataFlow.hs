@@ -1,65 +1,82 @@
-{-# LANGUAGE Arrows, NamedFieldPuns #-}
+{-# LANGUAGE Arrows #-}
 module Scoutess.DataFlow where
 
 import Control.Applicative                   ((<$>))
 import Control.Arrow
-import Control.Monad                         (filterM, when)
+import Control.Monad                         (filterM, when, forM_)
 import Control.Monad.State                   (State, runState, get, put, gets)
 import Data.Array                            (Array, array)
 import Data.Bimap                            (Bimap)
 import qualified Data.Bimap as B
+import Data.Function                         (on)
 import Data.Graph                            (Vertex)
 import Data.Map                              (Map)
 import qualified Data.Map as M
-import Data.Maybe                            (catMaybes)
+import Data.Maybe                            (catMaybes, fromMaybe)
 import Data.Set                              (Set)
 import qualified Data.Set as S
+import qualified Data.Text as T
 import Distribution.Package
 import Distribution.PackageDescription.Parse (readPackageDescription)
 import Distribution.Verbosity                (silent)
 import Distribution.Version                  (withinRange)
+import System.Exit                           (ExitCode(..))
 import System.Process                        (readProcessWithExitCode)
-import System.Directory                      (createDirectoryIfMissing, doesDirectoryExist, removeDirectoryRecursive)
+import System.Directory                      (createDirectory, createDirectoryIfMissing, doesDirectoryExist, removeDirectoryRecursive)
 import System.FilePath                       ((</>),(<.>))
 
 import Scoutess.Core
 import Scoutess.Service.LocalHackage.Core
-import Scoutess.Service.Source.Fetch         (fetchSrcs, fetchVersion, fetchVersions)
+import Scoutess.Service.Source.Fetch         (fetchSrc, fetchSrcs, fetchVersion, fetchVersions)
 
 -- standard build
 standard :: Scoutess SourceSpec SourceSpec    -- ^ sourceFilter
          -> Scoutess VersionSpec VersionSpec  -- ^ versionFilter
          -> Scoutess (SourceSpec, TargetSpec, Maybe PriorRun) BuildReport
-standard sourceFilter versionFilter =
-    proc (sourceSpec, targetSpec, priorRun) ->
-        do (availableVersions, targetVersion)
-                              <- fetchVersionSpec sourceFilter -< (targetSpec, sourceSpec)
-           consideredVersions <- versionFilter                 -< availableVersions
-           dependencyGraph    <- calculateDependencies         -< (targetSpec, targetVersion, consideredVersions)
-           buildSpec          <- calculateChanges              -< (targetSpec, priorRun, dependencyGraph)
-           hackageIndex       <- updateLocalHackage            -< buildSpec
-           buildReport        <- build                         -< (hackageIndex, buildSpec)
-           returnA -< buildReport
+standard sourceFilter versionFilter = proc (sourceSpec, targetSpec, mPriorRun) -> do
+    initialise -< targetSpec
+    (availableVersions, targetVersion, versionExceptions)
+                         <- fetchVersionSpec sourceFilter -< (targetSpec, sourceSpec)
+    consideredVersions   <- versionFilter                 -< availableVersions
+    dependencyGraph      <- calculateDependencies         -< (targetSpec, targetVersion, consideredVersions)
+    buildSpec            <- calculateChanges              -< (targetSpec, mPriorRun, dependencyGraph)
+    if bsToBuild buildSpec
+    then do
+        (buildSources, sourceExceptions)
+                     <- getSources                    -< (buildSpec, targetVersion)
+        hackageIndex <- updateLocalHackage            -< (buildSpec, buildSources)
+        exceptions   <- recordExceptions              -< (versionExceptions, Just sourceExceptions)
+        build                                         -< (buildSpec, hackageIndex, targetSource buildSources, exceptions)
+    else do
+        exceptions   <- recordExceptions              -< (versionExceptions, Nothing)
+        -- we didn't build but still return the target and depGraph
+        notBuild                                      -< (buildSpec, targetVersion, exceptions)
 
--- TODO: test and handle errors
+-- ensure that the temp, localHackage and package-db directories exist and are empty
+initialise :: Scoutess TargetSpec ()
+initialise = liftScoutess $ \targetSpec -> do
+    clearLocalHackage (tsLocalHackage targetSpec)
+    forM_ [tsTmpDir targetSpec] $ \filePath -> do
+        dirExists <- doesDirectoryExist filePath
+        when dirExists (removeDirectoryRecursive filePath)
+        createDirectoryIfMissing True filePath
+    pkgDirExists <- doesDirectoryExist (tsPackageDB targetSpec)
+    when pkgDirExists (removeDirectoryRecursive (tsPackageDB targetSpec))
+
 -- | fetch the 'VersionSpec' for the dependencies and the 'VersionInfo' for the target package.
 --   Note that the dependencies are fetched from the filtered 'SourceSpec' while the target is
 --   from the unfiltered 'SourceSpec'.
-fetchVersionSpec :: Scoutess SourceSpec SourceSpec -> Scoutess (TargetSpec, SourceSpec) (VersionSpec, VersionInfo)
+fetchVersionSpec :: Scoutess SourceSpec SourceSpec -> Scoutess (TargetSpec, SourceSpec) (VersionSpec, VersionInfo, Set SourceException)
 fetchVersionSpec sourceFilter = liftScoutess $ \(targetSpec, sourceSpec) -> do
     let (name, version, location) = tsNameVersionLocation targetSpec
     filteredSources <- S.toList . locations <$> runScoutess sourceFilter sourceSpec
-    if location `elem` filteredSources
-      then do
-        (errors, versionSpecs) <- fetchVersions (tsSourceConfig targetSpec) filteredSources
-        let combined = combineVersionSpecs versionSpecs
-        let Just targetVersion = findVersion name version location combined
-        return (combined, targetVersion)
-      else do
-        (errors, versionSpecs) <- fetchVersions (tsSourceConfig targetSpec) filteredSources
-        eitherTargetVersionSpec <- fetchVersion (tsSourceConfig targetSpec) location
-        let Just targetVersion = either (error "could not find the target") (findVersion name version location) eitherTargetVersionSpec
-        return (combineVersionSpecs versionSpecs, targetVersion)
+    (exceptions, versionSpecs) <- fetchVersions (tsSourceConfig targetSpec) filteredSources
+    let combined = combineVersionSpecs versionSpecs
+    mTargetVersion <- if location `elem` filteredSources
+        then return $ findVersion name version location combined
+        else either (error . T.unpack . sourceErrorMsg) (findVersion name version location) <$> fetchVersion (tsSourceConfig targetSpec) location
+    let targetVersion = fromMaybe (error "could not find the target in the sources") mTargetVersion
+    return (combined, targetVersion, S.fromList exceptions)
 
 calculateDependencies :: Scoutess (TargetSpec, VersionInfo, VersionSpec) DependencyGraph
 calculateDependencies = liftScoutess $ \(targetSpec, targetVersion, versionSpec) -> do
@@ -104,52 +121,79 @@ dependencyMap spec version = do
     depMaps    <- mapM (dependencyMap spec) unseenDeps
     return $ M.insert index depIndices (M.unions depMaps)
 
+-- | If the target, the dependencies and all their versions are the same as before, we don't need to build.
 calculateChanges :: Scoutess (TargetSpec, Maybe PriorRun, DependencyGraph) BuildSpec
-calculateChanges = liftScoutess $ \(targetSpec, mPriorRun, depGraph) -> do
-    let allPackages = S.fromAscList . map fst . B.toAscListR . association $ depGraph
-        newPackages = maybe allPackages (const err) mPriorRun
-        err         = error "PriorRun not yet implemented"
-    return BuildSpec
-      { bsTargetSpec = targetSpec
-      , bsNewDeps    = newPackages
-      , bsAllDeps    = allPackages}
+calculateChanges = liftScoutess $ \(targetSpec, mPriorRun, depGraph) -> return $
+    let toBuild = not . ((==) `on` dgVersionInfos) depGraph . prDepGraph
+    in BuildSpec targetSpec depGraph mPriorRun (maybe True toBuild mPriorRun)
 
-updateLocalHackage :: Scoutess BuildSpec LocalHackageIndex
-updateLocalHackage = liftScoutess $ \buildSpec -> do
+-- | Fetch the sources for the target and its dependencies
+getSources :: Scoutess (BuildSpec, VersionInfo) (BuildSources, Set SourceException)
+getSources = liftScoutess $ \(buildSpec, targetVI) -> do
+    let sourceConfig      = tsSourceConfig (bsTargetSpec buildSpec)
+        depVersionInfos   = targetVI `S.delete` dgVersionInfos (bsDepGraph buildSpec)
+    targetSource <- either (error . T.unpack . sourceErrorMsg) id <$> fetchSrc sourceConfig targetVI
+    (exceptions, depSources) <- fetchSrcs sourceConfig (S.toList depVersionInfos)
+    return (BuildSources targetSource (S.fromList depSources), S.fromList exceptions)
+
+-- | Add all the sources to the local hackage index and write a hackage index containing only those package to the temp directory
+updateLocalHackage :: Scoutess (BuildSpec, BuildSources) LocalHackageIndex
+updateLocalHackage = liftScoutess $ \(buildSpec, buildSources) -> do
     let localHackage = tsLocalHackage (bsTargetSpec buildSpec)
-        tmpDir       = tsTmpDir (bsTargetSpec buildSpec)
         indexPath    = tmpDir </> "00-index.tar"
         sourceConfig = tsSourceConfig (bsTargetSpec buildSpec)
-    createDirectoryIfMissing True tmpDir
-    (errors, sourceInfos) <- fetchSrcs sourceConfig (S.toList (bsNewDeps buildSpec))
-    mapM_ (flip addPackage localHackage) sourceInfos
-    generateIndexSelectively (Just . S.toList . bsAllDeps $ buildSpec) localHackage indexPath
+        tmpDir       = tsTmpDir (bsTargetSpec buildSpec)
+        allSources   = targetSource buildSources : S.toList (depSources buildSources)
+    mapM_ (flip addPackage localHackage) allSources
+    generateIndexSelectively (Just (map srcVersionInfo allSources)) localHackage indexPath
     return $ LocalHackageIndex (indexPath <.> ".gz")
 
--- | sandboxing doesn't seem to work - user package-db was still recognised by cabal
-build :: Scoutess (LocalHackageIndex, BuildSpec) BuildReport
-build = liftScoutess $ \(localHackageIndex, buildSpec) -> do
+recordExceptions :: Scoutess (Set SourceException, Maybe (Set SourceException)) RecordedExceptions
+recordExceptions = liftScoutess (return . uncurry RecordedExceptions)
+
+-- | If if there was nothing to build, return a Left containing only the target's 'VersionInfo' and 'DependencyGraph' else
+--   return a 'Right' containing the rest of the build report
+build :: Scoutess (BuildSpec, LocalHackageIndex, SourceInfo, RecordedExceptions) BuildReport
+build = liftScoutess $ \(buildSpec, localHackageIndex, targetSourceInfo, exceptions) -> do
     let targetSpec  = bsTargetSpec buildSpec
         sandboxDir  = tsPackageDB targetSpec
         installDir  = sandboxDir
         configFile  = tsTmpDir targetSpec </> "config"
-        targetCabal = undefined
-    dirExists <- doesDirectoryExist sandboxDir
-    when (dirExists) (removeDirectoryRecursive sandboxDir)
+        logLocation = tsTmpDir targetSpec </> "build.log"
+    targetCabal <- fromMaybe (error "could not find target cabal file") <$> findCabalFile (srcPath targetSourceInfo)
     (ghcPkgExitCode, ghcPkgOut, ghcPkgErr) <-
         readProcessWithExitCode "ghc-pkg" ["init", sandboxDir] []
+    when (ghcPkgExitCode /= ExitSuccess) $ do
+        error ghcPkgErr -- temporary until a better sandboxing method is found
     writeFile configFile $ unlines
-      [ "local-repo: " ++ hackageDir (tsLocalHackage (bsTargetSpec buildSpec))
-      , "build-summary: " ++ (tsTmpDir (bsTargetSpec buildSpec) </> "build.log")
-      , "remote-build-reporting: anonymous"]
-    -- TODO: allow custom cabal args
-    let cabalArgs = ["--config-file=" ++ configFile
-                    ,"install"
-                    ,targetCabal
-                    ,"--package-db=clear"
-                    ,"--package-db=" ++ sandboxDir
-                    ,"--prefix=" ++ installDir]
-    (cabalExitCode, cabalOut, cabalErr) <- readProcessWithExitCode "cabal" cabalArgs []
-    let buildReport = undefined
-    -- TODO: collect cabal's build report and the results of other processes
-    return buildReport
+        [ "local-repo: " ++ hackageDir (tsLocalHackage (bsTargetSpec buildSpec))
+        , "build-summary: " ++ logLocation
+        , "remote-build-reporting: anonymous"
+        ]
+    let cabalArgs =
+            ["--config-file=" ++ configFile
+            ,"install"
+            ,targetCabal
+            ,"--package-db=clear"
+            ,"--package-db=" ++ sandboxDir
+            ,"--prefix=" ++ installDir
+            ] ++ map T.unpack (tsCustomCabalArgs targetSpec)
+    (exitCode, out, err) <- readProcessWithExitCode "cabal" cabalArgs []
+    cabalLog <- readFile logLocation
+    return BuildReport
+        { brTarget          = srcVersionInfo targetSourceInfo
+        , brDependencyGraph = bsDepGraph buildSpec
+        , brExceptions      = exceptions
+        , brPriorRun        = bsPriorRun buildSpec
+        , brCabalResults    = Just (exitCode, T.pack out, T.pack err, T.pack cabalLog)
+        }
+
+notBuild :: Scoutess (BuildSpec, VersionInfo, RecordedExceptions) BuildReport
+notBuild = liftScoutess $ \(buildSpec, targetVersion, exceptions) ->
+    return BuildReport
+        { brTarget          = targetVersion
+        , brDependencyGraph = bsDepGraph buildSpec
+        , brExceptions      = exceptions
+        , brPriorRun        = bsPriorRun buildSpec
+        , brCabalResults    = Nothing
+        }
