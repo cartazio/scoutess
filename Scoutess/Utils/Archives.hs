@@ -9,10 +9,7 @@ import qualified Data.ByteString.Lazy   as L
 extractArchive :: FilePath -- ^ input .tar.gz archive
                -> FilePath -- ^ output directory
                -> IO ()
-extractArchive ar dir = do
-    archive <- L.readFile ar
-    -- the length is forced to close the handle to ar
-    L.length archive `seq` Tar.unpack dir . Tar.read $ GZ.decompress archive
+extractArchive ar dir = Tar.unpack dir . Tar.read . GZ.decompress =<< L.readFile ar
 
 -- | create a @.tar@ file from /relative/ file paths
 tarFiles :: [FilePath] -- ^ list of files to put in the archive

@@ -3,16 +3,16 @@
 
 module Scoutess.Service.Source.Hackage (fetchHackage, fetchVersionsHackage) where
 
+import Control.Monad                         (liftM)
 import Control.Monad.Trans                   (MonadIO(..), liftIO)
 import Data.Text                             (Text)
 import qualified Data.Text as Text
 import Data.Version                          (showVersion)
 import Distribution.PackageDescription.Parse (readPackageDescription)
-import Data.Set                              (Set)
 import qualified Data.Set as S
 import Distribution.Verbosity                (silent)
 import System.FilePath                       ((</>))
-import System.Directory                      (createDirectoryIfMissing, renameDirectory, doesDirectoryExist, removeDirectoryRecursive, removeFile)
+import System.Directory                      (createDirectoryIfMissing, renameDirectory, doesDirectoryExist, doesFileExist,)
 
 import Scoutess.Core
 import Scoutess.Utils.Archives
@@ -39,8 +39,8 @@ fetchHackage sourceConfig versionInfo = do
         fullCacheDir = destDir </> Text.unpack pkgVersion
     cacheExists <- liftIO $ doesDirectoryExist fullCacheDir
     if cacheExists
-    then return . Right $ SourceInfo fullCacheDir versionInfo
-    else liftIO $ downloadFile pkgUrl archiveLoc >>= \mDledPath -> case mDledPath of
+      then return . Right $ SourceInfo fullCacheDir versionInfo
+      else liftIO $ downloadFile pkgUrl archiveLoc >>= \mDledPath -> case mDledPath of
         Just dledPath -> liftIO $ do
             createDirectoryIfMissing True destDir
             extractArchive dledPath destDir
@@ -61,6 +61,8 @@ fetchVersionsHackage sourceConfig = do
       liftIO $ extractArchive pkgIndex (tmpDir </> "unpack")
       cabals              <- liftIO $ findCabalFiles tmpDir
       packageDescriptions <- liftIO $ mapM (readPackageDescription silent) cabals
-      liftIO $ removeDirectoryRecursive (tmpDir </> "unpack")
-      return . Right . VersionSpec . S.fromList . map (createVersionInfo Hackage) $ packageDescriptions
+      let prefFile = tmpDir </> "unpack" </> "preferred-versions"
+      prefExists <- liftIO $ doesFileExist prefFile
+      pref <- if prefExists then (Just . Text.pack) `liftM` liftIO (readFile prefFile) else return Nothing
+      return . Right $ VersionSpec (S.fromList (map (createVersionInfo Hackage) packageDescriptions)) pref
   where tmpDir = srcCacheDir sourceConfig </> "tmp"

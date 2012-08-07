@@ -52,7 +52,7 @@ updateFile' :: URI -> FilePath -> IO (Maybe FilePath)
 updateFile' uri dest = do
     fileExists <- doesFileExist dest
     if fileExists
-    then do
+      then do
         modifiedDate <- lastModified dest
         let setHeader = insertHeader HdrIfModifiedSince modifiedDate
         ersp <- simpleHTTP . setHeader . defaultGETRequest_ $ uri
@@ -61,7 +61,7 @@ updateFile' uri dest = do
                 -> createDirectoryIfMissing True (dropFileName dest) >> BS.writeFile dest (rspBody rsp)
             _   -> return ()
         return (Just dest)
-    else downloadFile' uri dest
+      else downloadFile' uri dest
 
 -- | returns the last modifed date of the file in RFC 822 format
 lastModified :: FilePath -> IO String

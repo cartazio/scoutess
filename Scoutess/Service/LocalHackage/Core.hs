@@ -1,6 +1,6 @@
 -- | This service is used to have a sort of local hackage-like package index, which basically means maintaining a package index containing the dependencies
 
-module Scoutess.Service.LocalHackage.Core (generateIndex, generateIndexSelectively, addPackage, LocalHackage(..), clearLocalHackage) where
+module Scoutess.Service.LocalHackage.Core (generateIndex, generateIndexSelectively, addPackage, addPackages, LocalHackage(..), clearLocalHackage) where
 
 import Control.Monad                   (when, forM_)
 import Data.List                       (isSuffixOf)
@@ -45,23 +45,40 @@ extractArchives :: [FilePath] -- ^ list of package archives (.tar.gz)
                 -> IO ()
 extractArchives archives dir = mapM_ (flip extractArchive dir) archives
 
+-- | Adds the package described by the given @SourceInfo@s to the hackage db
+--   and refreshes the package index after it's done.
+--   If the same package and version already are in the db, does nothing
+--   (it assumes there's a .cabal file in the @SourceInfo@s' srcPath)
+addPackages :: [SourceInfo] -- ^ source infos we get after fetching a package
+            -> LocalHackage -- ^ hackage repository
+            -> IO ()
+addPackages sourceInfos hackage = do
+    mapM_ (flip addPackage' hackage) sourceInfos
+    generateIndex hackage (hackageDir hackage </> "00-index.tar")
+
 -- | Adds the package described by the given @SourceInfo@ to the hackage db
+--   and refreshes the package index.
 --   If the same package and version already are in the db, does nothing
 --   (it assumes there's a .cabal file in the @SourceInfo@'s srcPath)
 addPackage :: SourceInfo   -- ^ source info we get after fetching a package
            -> LocalHackage -- ^ hackage repository
            -> IO ()
-addPackage srcInfo hackage = do
+addPackage srcInfo hackage = addPackages [srcInfo] hackage
+
+addPackage' :: SourceInfo
+            -> LocalHackage
+            -> IO ()
+addPackage' srcInfo hackage = do
   createDirectoryIfMissing True packageDir
   pkgVersionExists <- doesDirectoryExist packageVersionDir
   when (not pkgVersionExists) $ do
     createDirectoryIfMissing True packageVersionDir
     copyFile packageCabalFilePath $ packageVersionDir </> pkgN <.> ".cabal"
+    tmpDirExists <- doesDirectoryExist tmpPackageDir
+    when tmpDirExists (removeDirectoryRecursive tmpPackageDir)
     createDirectoryIfMissing True tmpPackageDir
     copyDir src tmpPackageDir
     tarGzipFiles [pkgIdent] (hackageTmpDir hackage) (packageVersionDir </> pkgIdent <.> ".tar.gz")
-    removeDirectoryRecursive tmpPackageDir
-    generateIndex hackage (hackageDir hackage </> "00-index.tar")
   where pkgN                 = srcName srcInfo
         pkgV                 = pack . showVersion $ srcVersion srcInfo
         tmpPackageDir        = hackageTmpDir hackage </> pkgIdent
@@ -69,7 +86,7 @@ addPackage srcInfo hackage = do
         packageVersionDir    = packageDir </> unpack pkgV
         packageCabalFilePath = src </> pkgN <.> ".cabal"
         packageArchivePath   = packageVersionDir </> pkgIdent <.> ".tar.gz"
-        src                  = srcPath srcInfo
+        src                  = siPath srcInfo
         pkgIdent             = pkgN ++ "-" ++ unpack pkgV
 
 clearLocalHackage :: LocalHackage -> IO ()

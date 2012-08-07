@@ -6,9 +6,9 @@ module Scoutess.Service.Source.Darcs where
 
 import Control.Monad                         (when)
 import Control.Monad.Trans                   (MonadIO(..), liftIO)
-import Data.Text                             (Text, pack)
-import qualified Data.Text as Text           (dropWhileEnd, unpack)
-import Data.Set                              (Set, singleton)
+import Data.Text                             (pack, unpack)
+import qualified Data.Map as M
+import Data.Set                              (singleton)
 import Data.Version                          (showVersion)
 import Distribution.PackageDescription.Parse (readPackageDescription)
 import Distribution.Verbosity                (silent)
@@ -27,12 +27,12 @@ fetchDarcs :: (MonadIO m) =>
 fetchDarcs sourceConfig versionInfo = do
     preFetched <- liftIO $ doesDirectoryExist destDir
     if not preFetched
-    then do
+      then do
         (exitCode, out, err) <- callDarcs (viSourceLocation versionInfo) destDir
         return $ case exitCode of
             ExitFailure _ -> Left . SourceErrorOther . pack $ err
             ExitSuccess   -> Right sourceInfo
-    else return (Right sourceInfo)
+      else return (Right sourceInfo)
     where
     destDir = srcCacheDir sourceConfig </> (viName versionInfo ++ "-" ++ showVersion (viVersion versionInfo))
     sourceInfo = SourceInfo destDir versionInfo
@@ -43,6 +43,8 @@ fetchVersionsDarcs :: (MonadIO m) =>
                    -> m (Either SourceException VersionSpec)
 fetchVersionsDarcs sourceConfig sourceLocation = do
     let destDir = srcCacheDir sourceConfig </> "tempDarcs"
+    destExists <- liftIO $ doesDirectoryExist destDir
+    liftIO $ when destExists (removeDirectoryRecursive destDir)
     (exitCode, out, err) <- callDarcs sourceLocation destDir
     result <- liftIO $ case exitCode of
         ExitFailure _ -> return . Left . SourceErrorOther . pack $ err
@@ -52,12 +54,11 @@ fetchVersionsDarcs sourceConfig sourceLocation = do
             let versionInfo = createVersionInfo sourceLocation gpd
                 newDir      = srcCacheDir sourceConfig </> (viName versionInfo ++ "-" ++ showVersion (viVersion versionInfo))
             liftIO $ renameDirectory destDir newDir
-            return . Right . VersionSpec . singleton $ versionInfo
-    destExists <- liftIO $ doesDirectoryExist destDir
-    liftIO $ when destExists (removeDirectoryRecursive destDir)
+            return . Right $ VersionSpec (singleton versionInfo) Nothing
     return result
 
 callDarcs :: MonadIO m => SourceLocation -> FilePath -> m (ExitCode, String, String)
 callDarcs (Darcs location maybeTag) destDir = liftIO $ readProcessWithExitCode "darcs" args []
-    where args = ["get", Text.unpack location, "--repo-name=" ++ destDir]
-                  ++ maybe [] (\tag -> ["--tag =" ++ Text.unpack tag]) maybeTag
+    where args = ["get", unpack location, "--repo-name=" ++ destDir]
+                  ++ maybe [] (\tag -> ["--tag =" ++ unpack tag]) maybeTag
+callDarcs _ _ = error "callDarcs can only be called with the Darcs constructor for a SourceLocation."
