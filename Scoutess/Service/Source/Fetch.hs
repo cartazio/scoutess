@@ -10,6 +10,7 @@ import Scoutess.Core
 import Scoutess.Service.Source.Darcs   (fetchDarcs  , fetchVersionsDarcs)
 import Scoutess.Service.Source.Hackage (fetchHackage, fetchVersionsHackage)
 import Scoutess.Service.Source.Dir     (fetchDir    , fetchVersionsDir)
+import Scoutess.Types
 
 -- | fetch the source
 --

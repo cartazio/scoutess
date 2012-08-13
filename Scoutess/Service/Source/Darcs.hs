@@ -18,6 +18,9 @@ import System.FilePath                       ((</>))
 import System.Process                        (readProcessWithExitCode)
 
 import Scoutess.Core
+import Scoutess.Types
+
+import Prelude hiding ((++))
 
 -- | fetch source using @darcs@
 fetchDarcs :: (MonadIO m) =>
@@ -37,6 +40,8 @@ fetchDarcs sourceConfig versionInfo = do
     destDir = srcCacheDir sourceConfig </> (viName versionInfo ++ "-" ++ showVersion (viVersion versionInfo))
     sourceInfo = SourceInfo destDir versionInfo
 
+-- The version tag is the date of the most recent patch
+-- TODO: call "darcs changes" (with a subdirectory if needed) and with --xml-output
 fetchVersionsDarcs :: (MonadIO m) =>
                       SourceConfig
                    -> SourceLocation

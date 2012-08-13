@@ -1,118 +1,76 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving
-           , DeriveDataTypeable
-           , OverloadedStrings
-           , StandaloneDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Scoutess.Core where
 
 import Control.Arrow
-import Control.Applicative  ((<$>))
-import Control.Category     (Category)
-import Control.Exception    (Exception)
-import Control.Monad        (guard)
-import Control.Monad.Error  (Error(..))
-import Data.Data            (Typeable, Typeable2, Data(..), mkNoRepType, gcast2)
-import Data.List            (isPrefixOf)
+import Control.Applicative          ((<$>))
+import Control.Monad.Trans.Maybe
+import Control.Monad.Writer
+import Data.List                    (isPrefixOf)
 import qualified Data.Map as M
-import Data.Maybe           (mapMaybe, isJust, fromJust)
-import Data.Monoid
-import Data.Set             (Set)
+import Data.Maybe                   (mapMaybe, isJust, fromJust)
+import Data.Set                     (Set)
 import qualified Data.Set as S
-import Data.Text            (Text)
+import Data.Text                    (Text)
 import qualified Data.Text as T
-import Data.Version         (parseVersion, showVersion)
-import System.Directory (createDirectoryIfMissing)
-import System.Exit (ExitCode(..))
-import System.FilePath      ((</>), (<.>))
-import System.FilePath.Find (find, fileName, extension, (==?), depth)
+import Data.Version                 (parseVersion, showVersion)
+import System.Directory             (createDirectoryIfMissing)
+import System.FilePath              ((</>), (<.>))
+import System.FilePath.Find         (find, fileName, extension, (==?), depth)
 import Text.ParserCombinators.ReadP
+
+import Prelude hiding ((++))
 
 import Distribution.Package
 import Distribution.PackageDescription
 import Distribution.PackageDescription.PrettyPrint (writeGenericPackageDescription)
 import Distribution.Version (Version)
 
+import Scoutess.Types
 import Scoutess.Utils.Archives
-
 
 --------------------
 -- Scoutess arrow --
 --------------------
+runScoutess :: Scoutess a b -> a -> IO (Maybe b, [ComponentReport])
+runScoutess = runWriterT . runMaybeT .: runKleisli . unScoutess
 
-newtype Scoutess a b = Scoutess {unScoutess :: Kleisli IO a b}
-    deriving (Category, Arrow, ArrowApply, ArrowChoice, ArrowLoop, ArrowPlus, ArrowZero)
-
-runScoutess :: Scoutess a b -> a -> IO b
-runScoutess = runKleisli . unScoutess
-
-liftScoutess :: (a -> IO b) -> Scoutess a b
+liftScoutess :: (a -> Scoutess' b) -> Scoutess a b
 liftScoutess = Scoutess . Kleisli
 
----------------------------
--- Dealing with packages --
----------------------------
+----------------
+-- Components --
+----------------
+withComponent :: Text -> (a -> Component b) -> Scoutess a b
+withComponent name action = liftScoutess ((extractReportValue =<<) . (lift . lift . runWriterT . runMaybeT . action))
+    where
+    extractReportValue :: (Maybe (Bool, b), [Text]) -> Scoutess' b
+    extractReportValue (Nothing, cLog)               = do
+        tell [ComponentReport name False (T.unlines cLog)]
+        mzero
+    extractReportValue (Just (success, value), cLog) = do
+        tell [ComponentReport name success (T.unlines cLog)]
+        return value
 
--- | Information about a package that we've seen the cabal file of but not neccesarily fetched yet
-data VersionInfo = VersionInfo
-    { viGPD            :: GenericPackageDescription
-    , viVersionTag     :: Text
-      -- ^ a unique version identifier.
-      --   For packages from Hackage, this is equal to "<name>-<version>".
-      --   For packages from source control systems, this contains information about the latest patch.
-    , viSourceLocation :: SourceLocation
-    } deriving Show
+report :: Text -> Component ()
+report text = tell [text] >> componentPass ()
 
--- | Information about a package which has been fetched and is locally available now
-data SourceInfo = SourceInfo
-    { siPath         :: FilePath           -- ^ path to the directory that contains the .cabal file
-    , siVersionInfo  :: VersionInfo        -- ^ information about the source
-    }
-    deriving (Show, Typeable, Eq, Ord)
+componentPass, componentFail :: a -> Component a
+componentPass value = return (True, value)
+componentFail value = return (False, value)
 
--- | 'Eq' and 'Ord' will ignore the 'GenericPackageDescription'. 'Ord' because it isn't an instance
---   naturally and 'Eq' in order to make 'Ord' consistent.
-instance Eq VersionInfo where
-    VersionInfo _ t s ==        VersionInfo _ t' s' = (t,s) ==        (t',s')
-instance Ord VersionInfo where
-    VersionInfo _ t s `compare` VersionInfo _ t' s' = (t,s) `compare` (t',s')
+componentFinish :: Bool -> a -> Component a
+componentFinish True  = componentPass
+componentFinish False = componentFail
 
--- | Places where sources can be found
-data SourceLocation
-    = Bzr Text                            -- ^ get source from a bzr repo
-    | Cd FilePath SourceLocation          -- ^ source is in the sub-directory of another 'SourceLocation'
-    | Darcs Text (Maybe Text)             -- ^ get source from a darcs repo (optional tag)
-    | Dir FilePath                        -- ^ get source from local directory
-    | Hackage                             -- ^ get source from hackage
-    | Hg Text                             -- ^ get source from mercurial
-    | Patch SourceLocation Text           -- ^ Apply the patch given in the 'Text' to the target
-    | Quilt SourceLocation SourceLocation -- ^ get source and apply a quilt patch
-    | Svn Text                            -- ^ get source from subversion
-    | Tla Text                            -- ^ get source from tla
-    | Uri Text (Maybe Text)               -- ^ get source as @.tar.gz@ from uri (optional md5sum checksum)
-    deriving (Read, Show, Eq, Ord, Data, Typeable)
+componentFatal :: Component a
+componentFatal = mzero
 
 ---------------------
 -- Container types --
 ---------------------
-
-data SourceSpec
-    = SourceSpec { ssLocations :: Set SourceLocation }
-      deriving Show
-
 filterSourceSpec :: (SourceLocation -> Bool) -> SourceSpec -> SourceSpec
 filterSourceSpec p = SourceSpec . S.filter p . ssLocations
-
--- | Corresponds to a virtual repository
-data VersionSpec = VersionSpec
-    { vsVersions    :: Set VersionInfo -- The packages contained in the repository
-    , vsPreferences :: Maybe Text      -- ^ Repositories can also contain a file specifying preferred versions.
-    }
-    deriving (Show, Eq, Ord)
-
-instance Monoid VersionSpec where
-    mappend vs1 vs2 = VersionSpec (vsVersions vs1 `mappend` vsVersions vs2) (vsPreferences vs1 `mappend` vsPreferences vs2)
-    mempty = VersionSpec mempty mempty
-    mconcat vss = VersionSpec (mconcat (map vsVersions vss)) (mconcat (map vsPreferences vss))
 
 filterVersionSpec :: (VersionInfo -> Bool) -> VersionSpec -> VersionSpec
 filterVersionSpec p vs = VersionSpec (S.filter p (vsVersions vs)) (vsPreferences vs)
@@ -139,121 +97,48 @@ writeCabal dir versionInfo = do
 findIn :: [PackageIdentifier] -> Set VersionInfo -> [VersionInfo]
 findIn pkgIdens vis = mapMaybe (\pkgIden -> fst <$> S.maxView (S.filter ((pkgIden ==) . viPackageIden) vis)) pkgIdens
 
-data BuildSources = BuildSources
-    { targetSource :: SourceInfo   -- ^ The source for the target
-    , depSources   :: [SourceInfo] -- ^ The sources for the dependencies (in reverse topological order)
-    }
-    deriving Show
-
------------------
--- Other types --
------------------
-
--- | Configuration for fetching sources
-data SourceConfig = SourceConfig
-    { srcCacheDir :: FilePath -- ^ path to directory that holds retrieved source
-    }
-    deriving (Eq, Ord, Read, Show, Data, Typeable)
-
--- | The data type representing a local package repository
-data LocalHackage = LocalHackage
-    { hackageDir    :: FilePath
-    , hackageTmpDir :: FilePath
-    } deriving Show
-
--- | type for errors this service might encounter
---
--- should this be an 'Exception' or just an 'Error'?
---
--- Do we need to include the 'SourceLocation' in the error?
-data SourceException
-    = SourceErrorOther Text
-    | SourceErrorUnknown
-    deriving (Eq, Ord, Read, Show, Data, Typeable)
-
-instance Error SourceException where
-    noMsg    = SourceErrorUnknown
-    strMsg s = SourceErrorOther (T.pack s)
-
-instance Exception SourceException
-
+-----------
+-- Other --
+-----------
 -- | return a human readable error message
 sourceErrorMsg :: SourceException -- ^ error
                -> Text            -- ^ error message
 sourceErrorMsg (SourceErrorOther txt) = txt
 sourceErrorMsg (SourceErrorUnknown)   = "unknown source error"
 
-data BuildSpec = BuildSpec
-    { bsTargetSpec    :: TargetSpec     -- ^ input to scoutess
-    , bsTargetInfo    :: VersionInfo    -- ^ information about the target package
-    , bsDependencies  :: [VersionInfo]  -- ^ in reverse topological order
-    , bsPriorRun      :: Maybe PriorRun -- ^ information from the previous run
-    , bsToBuild       :: Bool           -- ^ is there a build needed?
-    }
-    deriving Show
 
--- | The initial input to scoutess
-data TargetSpec = TargetSpec
-    { tsName            :: Text           -- ^ the name of the target package
-    , tsVersion         :: Text           -- ^ the version of the target package
-    , tsLocation        :: SourceLocation -- ^ the 'SourceLocation' of the target package
-    , tsTmpDir          :: FilePath       -- ^ a directory that scoutess will put temporary files in
-    , tsLocalHackage    :: LocalHackage   -- ^ the local hackage repo
-    , tsPackageDB       :: FilePath       -- ^ the directory to be used as a package-db
-    , tsSourceConfig    :: SourceConfig   -- ^ the directory to unpack things from repos in
-    , tsCustomCabalArgs :: [Text]         -- ^ any additional arguments to pass to cabal
-    }
-    deriving Show
-
--- | Any errors or exceptions encountered when fetching the versions or the sources
-data RecordedExceptions = RecordedExceptions
-    { versionExceptions :: Set SourceException
-    , sourceExceptions  :: Maybe (Set SourceException)
-    }
-    deriving (Eq, Ord, Show, Read)
-
--- TODO: should we just have a link to the LocalBuildInfo?
-data BuildReport = BuildReport
-    { brBuildSpec    :: BuildSpec
-    , brExceptions   :: RecordedExceptions -- ^ any errors produced when fetching the versions or sources.
-    , brCabalResults :: Maybe (ExitCode, Text, Text, Text)
-        -- ^ The exit code, standard out, standard error and the contents of the log file produced by calling cabal
-    , brBuildSources :: Maybe BuildSources -- ^ the sources that we built (if we built)
-    }
-    deriving Show
-
-brSucceeded :: BuildReport -> Bool
-brSucceeded br = maybe False wasSuccess (brCabalResults br) && isJust (brBuildSources br)
-    where
-    wasSuccess :: (ExitCode, Text, Text, Text) -> Bool
-    wasSuccess (ExitSuccess, _, _, _) = True
-    wasSuccess _                      = False
-
-data PriorRun = PriorRun
-    { prTarget       :: VersionInfo
-    , prDependencies :: Set VersionInfo
-    }
-    deriving Show
 
 toPriorRun :: BuildReport -> PriorRun
 toPriorRun br = PriorRun (bsTargetInfo buildSpec) (S.fromList (bsDependencies buildSpec))
     where buildSpec = brBuildSpec br
 
--- | if there is no prior run or the target of the prior run is
---   different to that of the build report, return Nothing.
---   Otherwise, return the difference between the dependencies
---   XXX: not completed
-findDifference :: BuildReport -> Maybe (Set VersionInfo)
-findDifference br = undefined
+-- | If the target of the 'PriorRun' is
+--   different to that of the 'BuildReport', return Nothing.
+--   Otherwise, return a pair the two differences e.g.:
+--       "findDifference buildReport priorRun
+--           = (deps buildReport \\ deps priorRun, depsPriorRun \\ deps buildReport)"
+findDifference :: BuildReport -> PriorRun -> Maybe (Set VersionInfo, Set VersionInfo)
+findDifference buildReport priorRun
+    | bsTargetInfo buildSpec == prTarget priorRun
+                = Just (deps S.\\ deps', deps' S.\\ deps)
+    | otherwise = Nothing
+    where
+    buildSpec = brBuildSpec buildReport
+    deps  = S.fromList (bsDependencies buildSpec)
+    deps' = prDependencies priorRun
 
-data LocalHackageIndex = LocalHackageIndex
-    { pathToIndex :: FilePath
-    }
-    deriving Show
+noDifference :: BuildReport -> PriorRun -> Bool
+noDifference br pr = case findDifference br pr of
+    Just (diff1, diff2) | S.null diff1 && S.null diff2 -> True
+    _                                                  -> False
 
 ----------------------
 -- Helper functions --
 ----------------------
+(.:) :: (c -> d) -> (a -> b -> c) -> a -> b -> d
+(.:) = (.) . (.)
+infixr 8 .:
+
 viName :: VersionInfo -> String
 viName = (\(PackageName n) -> n) . pkgName . viPackageIden
 
@@ -334,3 +219,6 @@ parseDependencies = safeInit . map fromJust . takeWhile isJust
             versions = readP_to_S parseVersion (T.unpack version)
         guard . not . null $ versions
         Just . PackageIdentifier name' . fst . last $ versions
+
+(++) :: Monoid xs => xs -> xs -> xs
+(++) = mappend

@@ -15,8 +15,11 @@ import System.FilePath                       ((</>))
 import System.Directory                      (createDirectoryIfMissing, renameDirectory, doesDirectoryExist, doesFileExist,)
 
 import Scoutess.Core
+import Scoutess.Types
 import Scoutess.Utils.Archives
 import Scoutess.Utils.HTTP
+
+import Prelude hiding ((++))
 
 baseUrl :: String
 baseUrl = "http://hackage.haskell.org/packages/archive/"

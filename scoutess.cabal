@@ -11,24 +11,25 @@ synopsis: A Haskell build bot for cabal-powered projects
 category: Testing
 author: Jeremy Shaw, Alp Mestanogullari
 data-dir: ""
-
+ 
 library
-    build-depends: base == 4.*, filepath == 1.3.*, directory == 1.1.*, Cabal == 1.14.*
-                 , bytestring == 0.9.*, mtl == 2.1.*, filemanip == 0.3.*, text == 0.11.*
-                 , containers == 0.4.*, process == 1.1.*, zlib == 0.5.*, tar == 0.4.*
-                 , old-time == 1.1.*, old-locale == 1.0.*, network == 2.3.*, HTTP == 4000.2.*
-    exposed-modules: Scoutess.Core Scoutess.Config
+    build-depends: base ==4.*, filepath ==1.3.*, directory ==1.1.*,
+                   Cabal ==1.14.*, bytestring ==0.9.*, mtl ==2.1.*, filemanip ==0.3.*,
+                   text ==0.11.*, containers ==0.4.*, process ==1.1.*, zlib ==0.5.*,
+                   tar ==0.4.*, transformers ==0.3.*, old-time ==1.1.*,
+                   old-locale ==1.0.*, network ==2.3.*, HTTP ==4000.2.*
+    exposed-modules: Scoutess.Types Scoutess.Core Scoutess.Config
                      Scoutess.DataFlow Scoutess.Server
                      Scoutess.Service.LocalHackage.Core Scoutess.Service.PackDeps.Core
-                     Scoutess.Service.Source.Darcs
-                     Scoutess.Service.Source.Fetch Scoutess.Service.Source.Hackage
-                     Scoutess.Utils.Archives
+                     Scoutess.Service.Source.Darcs Scoutess.Service.Source.Fetch
+                     Scoutess.Service.Source.Hackage Scoutess.Utils.Archives
                      Scoutess.Utils.Directory Scoutess.Utils.HTTP
     exposed: True
     buildable: True
-
+ 
 executable scoutess
     main-is: Main.hs
     buildable: True
+    other-modules: Scoutess.Types
     ghc-options: -O2 -threaded
-
+ 

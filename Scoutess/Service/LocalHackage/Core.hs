@@ -10,34 +10,42 @@ import System.Directory
 import System.FilePath                 ((</>), (<.>))
 
 import Scoutess.Core
+import Scoutess.Types
 import Scoutess.Utils.Archives
 import Scoutess.Utils.Directory
+
+import Prelude hiding ((++))
 
 -- | generates a package index from a list of package archives
 generateIndex :: LocalHackage -- ^ directory that contains the packages
               -> FilePath     -- ^ filepath for the output package index
-              -> IO ()
+              -> IO LocalHackageIndex
 generateIndex = generateIndexSelectively Nothing
 
 -- | generates a package index from a (filtered) list of package archives
-generateIndexSelectively :: Maybe [VersionInfo] -- ^ if included, only put these packages in the index
-                         -> LocalHackage        -- ^ directory that contains the packages
-                         -> FilePath            -- ^ filepath for the output package index
-                         -> IO ()
+generateIndexSelectively :: Maybe [VersionInfo]  -- ^ if included, only put these packages in the index
+                         -> LocalHackage         -- ^ directory that contains the packages
+                         -> FilePath             -- ^ filepath for the output package index
+                         -> IO LocalHackageIndex -- ^ The filepath to the 00-index.tar.gz file
 generateIndexSelectively mVersionInfos hackage pkgIndex = do
   let pkgsDir = hackageDir hackage
   cabals <- findCabalFiles pkgsDir
   -- assume the cabal files have the filepath of .../pkgVersion/pkgName.cabal
   let cabals' = maybe cabals (flip filter cabals . validCabal) mVersionInfos
-  tarFiles (map (drop $ prefix pkgsDir) cabals') pkgsDir pkgIndex
-  tarGzipFiles (map (drop $ prefix pkgsDir) cabals') pkgsDir (pkgIndex ++ ".gz")
-  where prefix d = case last d == '/' of
-          True  -> length d
-          False -> length d + 1
-        toCabalDir :: VersionInfo -> FilePath
-        toCabalDir vi = showVersion (viVersion vi) </> viName vi <.> ".cabal"
-        validCabal :: [VersionInfo] -> FilePath -> Bool
-        validCabal versionInfos cabal = any (flip isSuffixOf cabal . toCabalDir) versionInfos
+      pkgIndex' = pkgIndex <.> ".gz"
+  -- XXX: tarFiles produces a "Permission Denied" error on my windows box
+  tarFiles (map (drop $ prefix pkgsDir) cabals') pkgsDir pkgIndex      -- create the tar file
+  -- TODO: replace 'tarGZipFiles' with 'gzipFile'? No point tarring twice
+  tarGzipFiles (map (drop $ prefix pkgsDir) cabals') pkgsDir pkgIndex' -- create the gzipped file
+  return $ LocalHackageIndex pkgIndex'
+  where
+  prefix d = case last d == '/' of
+    True  -> length d
+    False -> length d + 1
+  toCabalDir :: VersionInfo -> FilePath
+  toCabalDir vi = showVersion (viVersion vi) </> viName vi <.> ".cabal"
+  validCabal :: [VersionInfo] -> FilePath -> Bool
+  validCabal versionInfos cabal = any (flip isSuffixOf cabal . toCabalDir) versionInfos
 
 -- | extracts a list of package (.tar.gz) archives to a given directory
 extractArchives :: [FilePath] -- ^ list of package archives (.tar.gz)
@@ -51,7 +59,7 @@ extractArchives archives dir = mapM_ (flip extractArchive dir) archives
 --   (it assumes there's a .cabal file in the @SourceInfo@s' srcPath)
 addPackages :: [SourceInfo] -- ^ source infos we get after fetching a package
             -> LocalHackage -- ^ hackage repository
-            -> IO ()
+            -> IO LocalHackageIndex
 addPackages sourceInfos hackage = do
     mapM_ (flip addPackage' hackage) sourceInfos
     generateIndex hackage (hackageDir hackage </> "00-index.tar")
@@ -62,7 +70,7 @@ addPackages sourceInfos hackage = do
 --   (it assumes there's a .cabal file in the @SourceInfo@'s srcPath)
 addPackage :: SourceInfo   -- ^ source info we get after fetching a package
            -> LocalHackage -- ^ hackage repository
-           -> IO ()
+           -> IO LocalHackageIndex
 addPackage srcInfo hackage = addPackages [srcInfo] hackage
 
 addPackage' :: SourceInfo

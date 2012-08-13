@@ -14,19 +14,20 @@ import Scoutess.DataFlow
 main :: IO ()
 main = getArgs >>= buildScoutess >> return ()
 
-buildScoutess :: [String] -> IO BuildReport
+buildScoutess :: [String] -> IO ()
 buildScoutess [name, version, locationStr, sandboxDir, sourceLocationFile] = do
         sourceSpec <- SourceSpec . fromList . map read . lines <$> readFile sourceLocationFile
         let targetSpec = makeTargetSpec (pack name) (pack version) (read locationStr) sandboxDir
         runScoutess
             (standard onlyAllowHackage id)
             (sourceSpec, targetSpec, Nothing)
-buildScoutess _ = usage >>= putStrLn
+        return ()
+buildScoutess _ = putStrLn usage
 
 onlyAllowHackage :: Scoutess SourceSpec SourceSpec
 onlyAllowHackage = arr (filterSourceSpec (== Hackage))
 
-usage :: IO String
+usage :: String
 usage = unlines $
     [ "arguments are: name version location sandboxDir sourceLocationFile"
     , "where name, version and location are the details of the target package,"
