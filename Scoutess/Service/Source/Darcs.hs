@@ -40,8 +40,8 @@ fetchDarcs sourceConfig versionInfo = do
     destDir = srcCacheDir sourceConfig </> (viName versionInfo ++ "-" ++ showVersion (viVersion versionInfo))
     sourceInfo = SourceInfo destDir versionInfo
 
--- The version tag is the date of the most recent patch
--- TODO: call "darcs changes" (with a subdirectory if needed) and with --xml-output
+-- TODO: if the repo already exists, call darcs to update it
+-- TODO: see the discussion at http://irclog.perlgeek.de/darcs/2012-04-10#i_5424281 for details of checking for updates
 fetchVersionsDarcs :: (MonadIO m) =>
                       SourceConfig
                    -> SourceLocation

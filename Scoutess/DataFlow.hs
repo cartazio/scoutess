@@ -87,7 +87,7 @@ fetchVersionSpec sourceFilter = withComponent "fetchVersionSpec" $ \(targetSpec,
         then return (Right combined)
         else if location `elem` S.toList (ssLocations sourceSpec)
             then liftIO $ fetchVersion (tsSourceConfig targetSpec) location
-            else return . Left $ strMsg "The target's location wasn't in the SourceSpec"
+            else return . Left $ strMsg "The target's location wasn't in the SourceSpec" -- TODO: replace this with a more helpful error message
     -- attempt to find the target package in eTargetVersions, dealing with errors
     either (reportFetchFail versionsErr) (reportOnFind versionsErr combined . findVersion name version location) eTargetVersions
     where
@@ -209,9 +209,9 @@ build = withComponent "build" $ \(buildSpec, targetSourceInfo, _) -> do
     cabalLog <- if logExists
         then lift . lift $ readFile logLocation
         else do
-            report $ "The log file was not found at " ++ T.pack logLocation
+            report $ "The log file was not found (but should have been) at " ++ T.pack logLocation
             return ""
     guard (exitCode == ExitSuccess)
-    localBuildInfo <- liftIO $ getPersistBuildConfig (targetSourcePath </> "dist") -- TODO: check this
-    componentPass $ BuildReport buildSpec localBuildInfo -- TODO: check this
+    localBuildInfo <- liftIO $ getPersistBuildConfig (targetSourcePath </> "dist")
+    componentPass $ BuildReport buildSpec localBuildInfo
 

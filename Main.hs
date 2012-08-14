@@ -6,7 +6,7 @@ import Control.Arrow       (arr)
 import Control.Applicative ((<$>))
 import Control.Category    (id, (.))
 import Data.Set            (fromList)
-import Data.Text           (Text, pack)
+import Data.Text           (Text, pack, unpack)
 import System.Environment  (getArgs, getProgName)
 import System.FilePath     ((</>))
 
@@ -20,7 +20,8 @@ import Scoutess.Types
 main :: IO ()
 main = getArgs >>= \args -> case args of
     [tName, tVersion, tLocation, sandboxDir, sources]
-        -> buildScoutess tName tVersion tLocation sandboxDir sources >> return ()
+        -> do result <- buildScoutess tName tVersion tLocation sandboxDir sources
+              putStrLn (ppScoutessResult result)
     _   -> printUsage
 
 buildScoutess :: String -> String -> String -> String -> String -> IO (Maybe BuildReport, [ComponentReport])
@@ -28,7 +29,7 @@ buildScoutess tName tVersion tLocation sandboxDir sources = do
         sourceSpec <- SourceSpec . fromList . map read . lines <$> readFile sources
         let targetSpec = makeTargetSpec (pack tName) (pack tVersion) (read tLocation) sandboxDir
         runScoutess
-            (standard onlyAllowHackage id)
+            (standard id id)
             (sourceSpec, targetSpec, Nothing)
 
 onlyAllowHackage :: Scoutess SourceSpec SourceSpec
@@ -60,5 +61,5 @@ makeTargetSpec name version location sandboxDir = TargetSpec
     , tsPackageDB       = sandboxDir </> "package-cache"
     , tsSourceConfig    = SourceConfig (sandboxDir </> "srcCacheDir")
     , tsCustomCabalArgs = ["--enable-documentation"
-                          ,"--docdir=" ++ pack (sandboxDir </> "$pkg" </> "$version")]
+                          ,"--docdir=" ++ pack (sandboxDir </> "docs" </> "$pkg" </> "$version")]
     }

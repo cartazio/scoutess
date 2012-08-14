@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 -- | high-level interface to source fetching
 module Scoutess.Service.Source.Fetch where
 
@@ -5,12 +7,15 @@ import Control.Monad                   (liftM)
 import Control.Monad.Trans             (MonadIO(..))
 import Data.Either                     (partitionEithers)
 import Data.Set                        (Set)
+import Data.Text as T
 
 import Scoutess.Core
 import Scoutess.Service.Source.Darcs   (fetchDarcs  , fetchVersionsDarcs)
 import Scoutess.Service.Source.Hackage (fetchHackage, fetchVersionsHackage)
 import Scoutess.Service.Source.Dir     (fetchDir    , fetchVersionsDir)
 import Scoutess.Types
+
+import Prelude hiding ((++))
 
 -- | fetch the source
 --
@@ -38,8 +43,11 @@ fetchSrc :: (MonadIO m) =>
          -> m (Either SourceException SourceInfo)
 fetchSrc sourceConfig versionInfo =
     case viSourceLocation versionInfo of
-      Darcs _ _ -> fetchDarcs sourceConfig versionInfo
+      Darcs _ _ -> fetchDarcs   sourceConfig versionInfo
       Hackage   -> fetchHackage sourceConfig versionInfo
+      Dir _     -> fetchDir     sourceConfig versionInfo
+      _         -> return . Left . SourceErrorOther $
+          "Support for " ++ T.pack (show (viSourceLocation versionInfo)) ++ "has not been implemented yet."
 
 -- | fetch multiple 'SourceLocation's
 --
@@ -63,6 +71,8 @@ fetchVersion sourceConfig sourceLoc@(Darcs _ _) =
     fetchVersionsDarcs sourceConfig sourceLoc
 fetchVersion sourceConfig sourceLoc@(Dir _) =
     fetchVersionsDir sourceLoc
+fetchVersion _ sourceLoc = return . Left . SourceErrorOther $
+          "Support for " ++ T.pack (show sourceLoc) ++ "has not been implemented yet."
 
 fetchVersions :: (MonadIO m) =>
                  SourceConfig

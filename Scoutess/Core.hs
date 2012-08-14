@@ -2,10 +2,10 @@
 
 module Scoutess.Core where
 
-import Control.Arrow
+import Control.Arrow hiding ((<+>))
 import Control.Applicative          ((<$>))
 import Control.Monad.Trans.Maybe
-import Control.Monad.Writer
+import Control.Monad.Writer hiding ((<>))
 import Data.List                    (isPrefixOf)
 import qualified Data.Map as M
 import Data.Maybe                   (mapMaybe, isJust, fromJust)
@@ -18,6 +18,7 @@ import System.Directory             (createDirectoryIfMissing)
 import System.FilePath              ((</>), (<.>))
 import System.FilePath.Find         (find, fileName, extension, (==?), depth)
 import Text.ParserCombinators.ReadP
+import Text.PrettyPrint
 
 import Prelude hiding ((++))
 
@@ -37,6 +38,20 @@ runScoutess = runWriterT . runMaybeT .: runKleisli . unScoutess
 
 liftScoutess :: (a -> Scoutess' b) -> Scoutess a b
 liftScoutess = Scoutess . Kleisli
+
+ppScoutessResult :: (Maybe BuildReport, [ComponentReport]) -> String
+ppScoutessResult (mBuildReport, reports) = renderStyle (style{lineLength = 80}) (pBReport $+$ pCReports)
+    where
+    pBReport = case mBuildReport of
+        Nothing     -> text "Scoutess failed with these component reports:"
+        Just report -> text "Scoutess successfully built"
+                   <+> text (brName report) <> text "-" <> text (showVersion (brVersion report))
+                   <+> text "with these component reports:"
+    pCReports = sep (map ppComponentReport reports)
+    ppComponentReport :: ComponentReport -> Doc
+    ppComponentReport (ComponentReport name success extra)
+        = (text "The component" <+> text (T.unpack name) <+> text "returned" <+> text (show success)
+            <+> text "and :") $+$ (text (T.unpack extra))
 
 ----------------
 -- Components --
@@ -97,6 +112,12 @@ writeCabal dir versionInfo = do
 findIn :: [PackageIdentifier] -> Set VersionInfo -> [VersionInfo]
 findIn pkgIdens vis = mapMaybe (\pkgIden -> fst <$> S.maxView (S.filter ((pkgIden ==) . viPackageIden) vis)) pkgIdens
 
+brName :: BuildReport -> String
+brName = viName . bsTargetInfo . brBuildSpec
+
+brVersion :: BuildReport -> Version
+brVersion = viVersion . bsTargetInfo . brBuildSpec
+
 -----------
 -- Other --
 -----------
@@ -105,8 +126,6 @@ sourceErrorMsg :: SourceException -- ^ error
                -> Text            -- ^ error message
 sourceErrorMsg (SourceErrorOther txt) = txt
 sourceErrorMsg (SourceErrorUnknown)   = "unknown source error"
-
-
 
 toPriorRun :: BuildReport -> PriorRun
 toPriorRun br = PriorRun (bsTargetInfo buildSpec) (S.fromList (bsDependencies buildSpec))
