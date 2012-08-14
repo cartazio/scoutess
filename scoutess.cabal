@@ -23,6 +23,7 @@ library
                      Scoutess.Service.LocalHackage.Core Scoutess.Service.PackDeps.Core
                      Scoutess.Service.Source.Darcs Scoutess.Service.Source.Fetch
                      Scoutess.Service.Source.Hackage Scoutess.Utils.Archives
+                     Scoutess.Service.Source.Dir
                      Scoutess.Utils.Directory Scoutess.Utils.HTTP
     exposed: True
     buildable: True

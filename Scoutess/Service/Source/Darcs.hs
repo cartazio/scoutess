@@ -4,7 +4,7 @@
 -- <http://darcs.net>
 module Scoutess.Service.Source.Darcs where
 
-import Control.Monad                         (when)
+import Control.Monad                         (when, unless)
 import Control.Monad.Trans                   (MonadIO(..), liftIO)
 import Data.Text                             (pack, unpack)
 import qualified Data.Map as M
@@ -12,7 +12,7 @@ import Data.Set                              (singleton)
 import Data.Version                          (showVersion)
 import Distribution.PackageDescription.Parse (readPackageDescription)
 import Distribution.Verbosity                (silent)
-import System.Directory                      (doesDirectoryExist, removeDirectoryRecursive, renameDirectory)
+import System.Directory                      (createDirectoryIfMissing, doesDirectoryExist, removeDirectoryRecursive, renameDirectory)
 import System.Exit                           (ExitCode(..))
 import System.FilePath                       ((</>))
 import System.Process                        (readProcessWithExitCode)
@@ -47,7 +47,10 @@ fetchVersionsDarcs :: (MonadIO m) =>
                    -> SourceLocation
                    -> m (Either SourceException VersionSpec)
 fetchVersionsDarcs sourceConfig sourceLocation = do
-    let destDir = srcCacheDir sourceConfig </> "tempDarcs"
+    let destParent = srcCacheDir sourceConfig
+        destDir = destParent </> "tempDarcs"
+    destParentExists <- liftIO $ doesDirectoryExist destParent
+    unless destParentExists $ liftIO (createDirectoryIfMissing True destParent)
     destExists <- liftIO $ doesDirectoryExist destDir
     liftIO $ when destExists (removeDirectoryRecursive destDir)
     (exitCode, out, err) <- callDarcs sourceLocation destDir
