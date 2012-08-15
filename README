@@ -1,0 +1,14 @@
+For a post containing example usage, see: http://projectscoutess.blogspot.co.uk/2012/08/mission-report.html
+
+TODO (note that there are many TODO:s scattered throughout the code too):
+- The System.Time module is depreciated, use Data.Time instead
+- The versionTag field of a BuildReport is currently useless, it needs to be actually implemented.
+- fetchVersionsDarcs needs to call 'darcs fetch' to update an already existing repo
+- Backends for Cd and Git (and the other SourceLocations)
+- Currently 10k files are produced (mostly because of dealing with Hackage), perhaps a cleanup arrow is needed to be called in Scoutess.DataFlow.standard after 'build'?
+- Filemanip on Hackage still hasn't been updated to its latest version! It fails to build on Windows!
+
+BUGS (note that there are some XXX: in the code):
+- calling main with a relative directory resulted in failure, possibly something to do with </>, ++ and FilePaths?
+- Despite asking cabal to produce a log file, it isn't found afterwards. This probably isn't even needed however with the LocalBuildInfo.
+- When calling 'tarFiles' in Scoutess.Service.LocalHackage.Core.generateIndexSelectively, an error warning of "permission denied" is printed to the console

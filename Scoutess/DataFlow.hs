@@ -206,6 +206,7 @@ build = withComponent "build" $ \(buildSpec, targetSourceInfo, _) -> do
                                     , "ExitCode:", show exitCode, "StdOut:", out, "StdErr:", err]
     report output
     logExists <- liftIO $ doesFileExist logLocation
+    -- TODO: do we need the log if we have the LocalBuildInfo?
     cabalLog <- if logExists
         then lift . lift $ readFile logLocation
         else do

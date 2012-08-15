@@ -50,8 +50,9 @@ ppScoutessResult (mBuildReport, reports) = renderStyle (style{lineLength = 80}) 
     pCReports = sep (map ppComponentReport reports)
     ppComponentReport :: ComponentReport -> Doc
     ppComponentReport (ComponentReport name success extra)
-        = (text "The component" <+> text (T.unpack name) <+> text "returned" <+> text (show success)
-            <+> text "and :") $+$ (text (T.unpack extra))
+    -- TODO: don't show the "and:" if 'extra' is empty
+        = (text "The component \"" <+> text (T.unpack name) <+> text "\" returned" <+> text (show success)
+            <+> text "and:") $+$ (text (T.unpack extra))
 
 ----------------
 -- Components --
