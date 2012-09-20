@@ -8,7 +8,7 @@ import Network.URI       (parseURI, URI)
 import System.Directory  (createDirectoryIfMissing, doesFileExist, getModificationTime)
 import System.FilePath   (dropFileName)
 import System.Locale     (defaultTimeLocale, rfc822DateFormat)
-import Data.Time         (ctTZName, formatCalendarTime, toUTCTime)
+import System.Time       (ctTZName, formatCalendarTime, toUTCTime)
 
 import qualified Data.ByteString as BS
 
