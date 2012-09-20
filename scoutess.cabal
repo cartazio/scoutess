@@ -4,12 +4,12 @@ cabal-version: >=1.6
 build-type: Simple
 license: BSD3
 license-file: LICENSE
-copyright: 2012 Jeremy Shaw, Alp Mestanogullari
+copyright: 2012 Jeremy Shaw, Alp Mestanogullari, David McGillicuddy
 maintainer: alpmestan@gmail.com
 homepage: https://patch-tag.com/r/alpmestan/scoutess
 synopsis: A Haskell build bot for cabal-powered projects
 category: Testing
-author: Jeremy Shaw, Alp Mestanogullari
+author: Jeremy Shaw, Alp Mestanogullari, David McGillicuddy
 data-dir: ""
 
 library

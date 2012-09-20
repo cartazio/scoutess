@@ -52,8 +52,8 @@ fetchVersionsDarcs sourceConfig sourceLocation = do
     destParentExists <- liftIO $ doesDirectoryExist destParent
     unless destParentExists $ liftIO (createDirectoryIfMissing True destParent)
     destExists <- liftIO $ doesDirectoryExist destDir
-    liftIO $ when destExists (removeDirectoryRecursive destDir)
-    (exitCode, out, err) <- callDarcs sourceLocation destDir
+    liftIO $ when destExists (removeDirectoryRecursive destDir) -- we shouldn't remove, but try to 'darcs fetch' instead!
+    (exitCode, out, err) <- callDarcs sourceLocation destDir    -- so this command here shouldn't necessarily be 'get'
     result <- liftIO $ case exitCode of
         ExitFailure _ -> return . Left . SourceErrorOther . pack $ err
         ExitSuccess   -> do
