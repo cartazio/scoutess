@@ -9,6 +9,7 @@ import Data.Set            (fromList)
 import Data.Text           (Text, pack, unpack)
 import System.Environment  (getArgs, getProgName)
 import System.FilePath     ((</>))
+import System.Directory    (canonicalizePath)
 
 import Prelude hiding ((++), id, (.))
 
@@ -20,7 +21,8 @@ import Scoutess.Types
 main :: IO ()
 main = getArgs >>= \args -> case args of
     [tName, tVersion, tLocation, sandboxDir, sources]
-        -> do result <- buildScoutess tName tVersion tLocation sandboxDir sources
+        -> do sandboxAbs <- canonicalizePath sandboxDir
+              result <- buildScoutess tName tVersion tLocation sandboxAbs sources
               putStrLn (ppScoutessResult result)
     _   -> printUsage
 
