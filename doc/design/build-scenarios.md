@@ -57,3 +57,14 @@ haskell platform
 ----------------
 
 Test that package(s) build against several stock versions of the Haskell platform.
+
+
+incremental building
+--------------------
+
+Test building the project after *every single commit*, and not only after all the commits pushed since the last update. if one makes local commits A,B,C and push them to the repo, we want individual builds for {A}, {A,B}, {A,B,C}.
+
+did we break packages that rely on our project
+----------------------------------------------
+
+We may want to try to build (all / some of the) reverse deps of our project to check that we haven't broken them with the changes we made to our project.
