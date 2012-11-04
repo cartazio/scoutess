@@ -1,6 +1,6 @@
 name: scoutess
 version: 0.1
-cabal-version: >=1.6
+cabal-version: >=1.8
 build-type: Simple
 license: BSD3
 license-file: LICENSE
@@ -8,9 +8,9 @@ copyright: 2012 Jeremy Shaw, Alp Mestanogullari, David McGillicuddy
 maintainer: alpmestan@gmail.com
 homepage: http://hub.darcs.net/alp/scoutess
 synopsis: A Haskell build bot for cabal-powered projects
+description: A Haskell build bot for cabal-powered projects.
 category: Testing
 author: Jeremy Shaw, Alp Mestanogullari, David McGillicuddy
-data-dir: ""
 
 source-repository head
     type: darcs
@@ -29,12 +29,8 @@ library
                      Scoutess.Service.Source.Hackage Scoutess.Utils.Archives
                      Scoutess.Service.Source.Dir
                      Scoutess.Utils.Directory Scoutess.Utils.HTTP
-    exposed: True
-    buildable: True
 
 executable scoutess
     main-is: Main.hs
-    buildable: True
-    other-modules: Scoutess.Types
-    ghc-options: -O2 -threaded
-
+    hs-source-dirs: ""
+    build-depends: base, containers, directory, filepath, scoutess, text
