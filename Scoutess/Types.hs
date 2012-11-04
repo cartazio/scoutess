@@ -80,18 +80,19 @@ instance Ord VersionInfo where
 --   TODO: Include support for torrents and Hackage-style RemoteDBs (for example, Hackage mirrors)
 --   TODO: Branches and tags for Bzr, Git, Hg (others?)
 data SourceLocation
-    = Bzr Text                            -- ^ get source from a bzr repo
-    | Cd FilePath SourceLocation          -- ^ source is in the sub-directory of another 'SourceLocation'
-    | Darcs Text (Maybe Text)             -- ^ get source from a darcs repo (optional tag)
-    | Dir FilePath                        -- ^ get source from local directory
-    | Git Text                            -- ^ get source from a git repo
-    | Hackage                             -- ^ get source from hackage
-    | Hg Text                             -- ^ get source from mercurial
-    | Patch SourceLocation Text           -- ^ Apply the patch given in the 'Text' to the target
-    | Quilt SourceLocation SourceLocation -- ^ get source and apply a quilt patch
-    | Svn Text                            -- ^ get source from subversion
-    | Tla Text                            -- ^ get source from tla
-    | Uri Text (Maybe Text)               -- ^ get source as @.tar.gz@ from uri (optional md5sum checksum)
+    = Bzr Text                                  -- ^ get source from a bzr repo
+    | Cd FilePath SourceLocation                -- ^ source is in the sub-directory of another 'SourceLocation'
+    | Darcs Text (Maybe Text)                   -- ^ get source from a darcs repo (optional tag)
+    | Dir FilePath                              -- ^ get source from local directory
+    | Process FilePath [String] SourceLocation  -- ^ get source and run a process in the source directory
+    | Git Text                                  -- ^ get source from a git repo
+    | Hackage                                   -- ^ get source from hackage
+    | Hg Text                                   -- ^ get source from mercurial
+    | Patch SourceLocation Text                 -- ^ Apply the patch given in the 'Text' to the target
+    | Quilt SourceLocation SourceLocation       -- ^ get source and apply a quilt patch
+    | Svn Text                                  -- ^ get source from subversion
+    | Tla Text                                  -- ^ get source from tla
+    | Uri Text (Maybe Text)                     -- ^ get source as @.tar.gz@ from uri (optional md5sum checksum)
     deriving (Read, Show, Eq, Ord, Data, Typeable)
 
 ---------------------
