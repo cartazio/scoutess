@@ -6,11 +6,15 @@ license: BSD3
 license-file: LICENSE
 copyright: 2012 Jeremy Shaw, Alp Mestanogullari, David McGillicuddy
 maintainer: alpmestan@gmail.com
-homepage: https://patch-tag.com/r/alpmestan/scoutess
+homepage: http://hub.darcs.net/alp/scoutess
 synopsis: A Haskell build bot for cabal-powered projects
 category: Testing
 author: Jeremy Shaw, Alp Mestanogullari, David McGillicuddy
 data-dir: ""
+
+source-repository head
+    type: darcs
+    location: http://hub.darcs.net/alp/scoutess
 
 library
     build-depends: base ==4.*, filepath ==1.3.*, directory ==1.1.*,
