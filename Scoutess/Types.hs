@@ -78,6 +78,7 @@ instance Ord VersionInfo where
 
 -- | Places where sources can be found.
 --   TODO: Include support for torrents and Hackage-style RemoteDBs (for example, Hackage mirrors)
+--   TODO: Branches and tags for Bzr, Git, Hg (others?)
 data SourceLocation
     = Bzr Text                            -- ^ get source from a bzr repo
     | Cd FilePath SourceLocation          -- ^ source is in the sub-directory of another 'SourceLocation'
