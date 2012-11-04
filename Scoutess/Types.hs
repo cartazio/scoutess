@@ -83,6 +83,7 @@ data SourceLocation
     | Cd FilePath SourceLocation          -- ^ source is in the sub-directory of another 'SourceLocation'
     | Darcs Text (Maybe Text)             -- ^ get source from a darcs repo (optional tag)
     | Dir FilePath                        -- ^ get source from local directory
+    | Git Text                            -- ^ get source from a git repo
     | Hackage                             -- ^ get source from hackage
     | Hg Text                             -- ^ get source from mercurial
     | Patch SourceLocation Text           -- ^ Apply the patch given in the 'Text' to the target
