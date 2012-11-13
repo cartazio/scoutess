@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, CPP #-}
 -- | HTTP utility functions
 module Scoutess.Utils.HTTP (downloadFile, updateFile) where
 
@@ -8,7 +8,11 @@ import Network.URI       (parseURI, URI)
 import System.Directory  (createDirectoryIfMissing, doesFileExist, getModificationTime)
 import System.FilePath   (dropFileName)
 import System.Locale     (defaultTimeLocale, rfc822DateFormat)
+#ifndef OLD_TIME
+import Data.Time.Format  (formatTime)
+#else
 import System.Time       (ctTZName, formatCalendarTime, toUTCTime)
+#endif
 
 import qualified Data.ByteString as BS
 
@@ -67,5 +71,10 @@ updateFile' uri dest = do
 lastModified :: FilePath -> IO String
 lastModified file = do
     modTime <- getModificationTime file
+#ifndef OLD_TIME
+    return $ formatTime defaultTimeLocale rfc822DateFormat modTime
+#else
     let gmt = (toUTCTime modTime){ctTZName = "GMT"}
     return $ formatCalendarTime defaultTimeLocale rfc822DateFormat gmt
+#endif
+
