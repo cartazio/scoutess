@@ -38,5 +38,5 @@ fetchVersionsDir sourceLocation = do
             return . Left . SourceErrorOther $ "Could not find .cabal file in " ++ pack filePath
         Just cabalFile -> do
             gpd <- liftIO $ readPackageDescription silent cabalFile
-            let versionInfo = createVersionInfo sourceLocation gpd
+            let versionInfo = createVersionInfo sourceLocation cabalFile gpd
             return . Right $ VersionSpec (singleton versionInfo) Nothing

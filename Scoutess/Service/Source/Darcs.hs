@@ -59,7 +59,7 @@ fetchVersionsDarcs sourceConfig sourceLocation = do
         ExitSuccess   -> do
             (Just cabalFile) <- liftIO $ findCabalFile destDir
             gpd <- liftIO $ readPackageDescription silent cabalFile
-            let versionInfo = createVersionInfo sourceLocation gpd
+            let versionInfo = createVersionInfo sourceLocation cabalFile gpd
                 newDir      = srcCacheDir sourceConfig </> (viName versionInfo ++ "-" ++ showVersion (viVersion versionInfo))
             liftIO $ renameDirectory destDir newDir
             return . Right $ VersionSpec (singleton versionInfo) Nothing

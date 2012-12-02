@@ -56,7 +56,9 @@ type Component b = MaybeT (WriterT [Text] IO) (Bool, b)
 ---------------------------
 -- | A package that we've seen the cabal file of but not neccesarily fetched yet
 data VersionInfo = VersionInfo
-    { viGPD            :: GenericPackageDescription -- ^ The parsed .cabal file
+    { viCabalPath      :: FilePath                  -- ^ The parsed .cabal file
+    , viPackageIden    :: PackageIdentifier         -- ^ The package identifier
+    , viDependencies   :: [Dependency]              -- ^ Dependencies of the package
     , viVersionTag     :: Text                      -- ^ If two packages have the same name and version,
                                                     --   this is the tiebreaker
     , viSourceLocation :: SourceLocation            -- ^ Where this package came from
@@ -72,9 +74,9 @@ data SourceInfo = SourceInfo
 -- | 'Eq' and 'Ord' will ignore the 'GenericPackageDescription'. 'Ord' because it isn't an instance
 --   naturally and 'Eq' in order to make 'Ord' consistent.
 instance Eq VersionInfo where
-    VersionInfo _ t s ==        VersionInfo _ t' s' = (t,s) ==        (t',s')
+    vi == vi'   = (viVersionTag vi, viSourceLocation vi) == (viVersionTag vi', viSourceLocation vi')
 instance Ord VersionInfo where
-    VersionInfo _ t s `compare` VersionInfo _ t' s' = (t,s) `compare` (t',s')
+    vi `compare` vi'   = (viVersionTag vi, viSourceLocation vi) `compare` (viVersionTag vi', viSourceLocation vi')
 
 -- | Places where sources can be found.
 --   TODO: Include support for torrents and Hackage-style RemoteDBs (for example, Hackage mirrors)

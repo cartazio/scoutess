@@ -25,6 +25,8 @@ import Prelude hiding ((++))
 import Distribution.Package
 import Distribution.PackageDescription
 import Distribution.PackageDescription.PrettyPrint (writeGenericPackageDescription)
+import Distribution.PackageDescription.Parse (readPackageDescription)
+import Distribution.Verbosity                (silent)
 import Distribution.Version (Version)
 
 import Scoutess.Types
@@ -101,10 +103,15 @@ createPackageIndexWith conflict vs baseDir = do
     archiveLoc = baseDir </> "00-index.tar"
     versions' = M.toList $ M.fromListWith conflict [((viName vi, showVersion (viVersion vi)), vi) | vi <- S.toList (vsVersions vs)]
 
+parsePackageDescription :: VersionInfo -> IO GenericPackageDescription
+parsePackageDescription versionInfo = do
+    readPackageDescription silent (viCabalPath versionInfo)
+
 writeCabal :: FilePath -> VersionInfo -> IO FilePath
 writeCabal dir versionInfo = do
     createDirectoryIfMissing True dir
-    writeGenericPackageDescription dir' (viGPD versionInfo)
+    gpd <- parsePackageDescription versionInfo
+    writeGenericPackageDescription dir' gpd
     return dir'
     where
     name    = viName versionInfo
@@ -165,12 +172,6 @@ viName = (\(PackageName n) -> n) . pkgName . viPackageIden
 viVersion :: VersionInfo -> Version
 viVersion = pkgVersion . viPackageIden
 
-viPackageIden :: VersionInfo -> PackageIdentifier
-viPackageIden = package . packageDescription . viGPD
-
-viDependencies :: VersionInfo -> [Dependency]
-viDependencies = buildDepends . packageDescription . viGPD
-
 srcName :: SourceInfo -> String
 srcName = viName . siVersionInfo
 
@@ -194,13 +195,15 @@ findVersion name version location vs = (fst <$>) . S.maxView . S.filter isTarget
         T.unpack version == showVersion (viVersion vi) &&
         location == viSourceLocation vi
 
-createVersionInfo :: SourceLocation -> GenericPackageDescription -> VersionInfo
-createVersionInfo sourceLocation gpd = versionInfo
+createVersionInfo :: SourceLocation -> FilePath -> GenericPackageDescription -> VersionInfo
+createVersionInfo sourceLocation cabalPath gpd = versionInfo
     where
     name               = viName versionInfo
     version            = showVersion (viVersion versionInfo)
     versionInfo        = VersionInfo
-        { viGPD            = gpd
+        { viCabalPath      = cabalPath
+        , viPackageIden    = package $ packageDescription gpd
+        , viDependencies   = buildDepends $ packageDescription gpd
         , viVersionTag     = T.pack (name ++ "-" ++ version)
         , viSourceLocation = sourceLocation}
 

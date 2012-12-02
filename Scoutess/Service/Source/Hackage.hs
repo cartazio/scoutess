@@ -3,7 +3,7 @@
 
 module Scoutess.Service.Source.Hackage (fetchHackage, fetchVersionsHackage) where
 
-import Control.Monad                         (liftM)
+import Control.Monad                         (liftM, forM)
 import Control.Monad.Trans                   (MonadIO(..), liftIO)
 import Data.Text                             (Text)
 import qualified Data.Text as Text
@@ -62,10 +62,12 @@ fetchVersionsHackage sourceConfig = do
     Nothing       -> return . Left . SourceErrorOther $ "Couldn't download the package index."
     Just pkgIndex -> do
       liftIO $ extractArchive pkgIndex (tmpDir </> "unpack")
-      cabals              <- liftIO $ findCabalFiles tmpDir
-      packageDescriptions <- liftIO $ mapM (readPackageDescription silent) cabals
       let prefFile = tmpDir </> "unpack" </> "preferred-versions"
       prefExists <- liftIO $ doesFileExist prefFile
       pref <- if prefExists then (Just . Text.pack) `liftM` liftIO (readFile prefFile) else return Nothing
-      return . Right $ VersionSpec (S.fromList (map (createVersionInfo Hackage) packageDescriptions)) pref
+      cabals              <- {-# SCC "hi" #-} liftIO $ findCabalFiles tmpDir
+      versionInfos        <- {-# SCC "hi2" #-} liftIO $ forM cabals $ \cabalFile -> do
+          packageDescription <- readPackageDescription silent cabalFile
+          return $! createVersionInfo Hackage cabalFile $! packageDescription
+      return . Right $ VersionSpec (S.fromList versionInfos) pref
   where tmpDir = srcCacheDir sourceConfig </> "tmp"
