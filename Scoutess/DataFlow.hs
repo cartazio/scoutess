@@ -25,8 +25,6 @@ import Scoutess.Types
 
 import Distribution.Simple.Configure (getPersistBuildConfig)
 
-import Prelude hiding ((++))
-
 -- standard build
 standard :: Scoutess SourceSpec SourceSpec    -- ^ sourceFilter
          -> Scoutess VersionSpec VersionSpec  -- ^ versionFilter
@@ -79,7 +77,7 @@ fetchVersionSpec sourceFilter = withComponent "fetchVersionSpec" $ \(targetSpec,
     let combined = mconcat versionSpecs
         versionsErr = case exceptions of
             [] -> ""
-            _  -> "Fetching the versions gave these exceptions: " ++ T.unlines (map sourceErrorMsg exceptions)
+            _  -> "Fetching the versions gave these exceptions: " <> T.unlines (map sourceErrorMsg exceptions)
     report versionsErr
 
     -- eTargetVersions represents the locations we look for the target package in
@@ -93,7 +91,7 @@ fetchVersionSpec sourceFilter = withComponent "fetchVersionSpec" $ \(targetSpec,
     where
     -- can't fetch the versions from the location where the target is meant to be
     reportFetchFail versionsErr targetErr = do
-        report $ T.pack ("Error when fetching the versions from the target's location: " ++ show targetErr)
+        report $ T.pack ("Error when fetching the versions from the target's location: " <> show targetErr)
         mzero
     -- could fetch the versions but can't find the target in them
     reportOnFind versionsErr _ Nothing = do
@@ -111,14 +109,14 @@ produceBuildSpec = withComponent "produceBuildSpec" $ \(targetSpec, targetInfo, 
         sandboxDir  = tsPackageDB targetSpec
         fakeRepo    = tsTmpDir targetSpec </> "fakeRepo"
     liftIO $ createPackageIndexWith const versionSpec fakeRepo -- XXX: 'const' will just pick packages with the highest SourceLocation
-    liftIO $ writeFile configFile ("local-repo: " ++ fakeRepo)
+    liftIO $ writeFile configFile ("local-repo: " <> fakeRepo)
     targetCabal <- liftIO $ writeCabal (tsTmpDir targetSpec) targetInfo
     let cabalArgs =
-            ["--config-file=" ++ configFile
+            ["--config-file=" <> configFile
             ,"install"
             ,targetCabal
             ,"--package-db=clear"
-            ,"--package-db=" ++ sandboxDir
+            ,"--package-db=" <> sandboxDir
             ,"--dry-run"]
     (exitCode, stdOut, stdErr) <- liftIO $ readProcessWithExitCode "cabal" cabalArgs []
     let deps        = parseDependencies stdOut `findIn` (vsVersions versionSpec)
@@ -145,13 +143,13 @@ getSources = withComponent "getSources" $ \buildSpec -> do
         targetVersionInfo = bsTargetInfo buildSpec
     eTargetSource <- fetchSrc sourceConfig targetVersionInfo
     when (isLeft eTargetSource) $ do
-        report $ "Unable to fetch the target source with error:\n" ++ sourceErrorMsg (fromLeft eTargetSource)
+        report $ "Unable to fetch the target source with error:\n" <> sourceErrorMsg (fromLeft eTargetSource)
         mzero
     let targetSource' = fromRight eTargetSource
     (exceptions, depSources') <- fetchSrcs sourceConfig depVersionInfos
     let depSourceReport = case exceptions of
           [] -> ""
-          _  -> "fetching the sources gave these exceptions:\n" ++ T.unlines (map sourceErrorMsg exceptions)
+          _  -> "fetching the sources gave these exceptions:\n" <> T.unlines (map sourceErrorMsg exceptions)
     report depSourceReport
     componentPass $ BuildSources targetSource' depSources'
     where
@@ -184,23 +182,23 @@ build = withComponent "build" $ \(buildSpec, targetSourceInfo, _) -> do
 
     mTargetCabal <- liftIO $ findCabalFile targetSourcePath
     when (isNothing mTargetCabal) $ do
-        report $ "Couldn't find the target's cabal file in: " ++ T.pack targetSourcePath
+        report $ "Couldn't find the target's cabal file in: " <> T.pack targetSourcePath
         mzero
     let targetCabal = fromJust mTargetCabal
     configExists <- liftIO $ doesFileExist configFile
     when configExists (liftIO $ removeFile configFile)
 
     liftIO . writeFile configFile $ unlines
-        [ "local-repo: " ++ hackageDir (tsLocalHackage (bsTargetSpec buildSpec))
-        , "build-summary: " ++ logLocation ]
+        [ "local-repo: " <> hackageDir (tsLocalHackage (bsTargetSpec buildSpec))
+        , "build-summary: " <> logLocation ]
     let cabalArgs =
-            ["--config-file=" ++ configFile
+            ["--config-file=" <> configFile
             ,"install"
             ,targetCabal
             ,"--package-db=clear"
-            ,"--package-db=" ++ sandboxDir
-            ,"--prefix=" ++ installDir
-            ] ++ map T.unpack (tsCustomCabalArgs targetSpec)
+            ,"--package-db=" <> sandboxDir
+            ,"--prefix=" <> installDir
+            ] <> map T.unpack (tsCustomCabalArgs targetSpec)
     (exitCode, out, err) <- liftIO $ readProcessWithExitCode "cabal" cabalArgs []
     let output = T.pack $ unlines [ "Calling cabal install returned:"
                                     , "ExitCode:", show exitCode, "StdOut:", out, "StdErr:", err]
@@ -210,7 +208,7 @@ build = withComponent "build" $ \(buildSpec, targetSourceInfo, _) -> do
     cabalLog <- if logExists
         then lift . lift $ readFile logLocation
         else do
-            report $ "The log file was not found (but should have been) at " ++ T.pack logLocation
+            report $ "The log file was not found (but should have been) at " <> T.pack logLocation
             return ""
     guard (exitCode == ExitSuccess)
     localBuildInfo <- liftIO $ getPersistBuildConfig (targetSourcePath </> "dist")

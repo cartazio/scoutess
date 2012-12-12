@@ -5,13 +5,14 @@ module Main where
 import Control.Arrow       (arr)
 import Control.Applicative ((<$>))
 import Control.Category    (id, (.))
+import Data.Monoid         ((<>))
 import Data.Set            (fromList)
 import Data.Text           (Text, pack, unpack)
 import System.Environment  (getArgs, getProgName)
 import System.FilePath     ((</>))
 import System.Directory    (canonicalizePath)
 
-import Prelude hiding ((++), id, (.))
+import Prelude             hiding (id, (.))
 
 import Scoutess.Core
 import Scoutess.DataFlow
@@ -39,7 +40,7 @@ onlyAllowHackage = arr (filterSourceSpec (== Hackage))
 
 printUsage :: IO ()
 printUsage = getProgName >>= \progName -> putStrLn . unlines $
-    [ "Usage: " ++ progName ++ " tName tVersion tLocation sandboxDir sources\n"
+    [ "Usage: " <> progName <> " tName tVersion tLocation sandboxDir sources\n"
     , "    tName:      name of the target package"
     , "    tVersion:   version of the target package"
     , "    tLocation:  SourceLocation of the target package"
@@ -63,5 +64,5 @@ makeTargetSpec name version location sandboxDir = TargetSpec
     , tsPackageDB       = sandboxDir </> "package-cache"
     , tsSourceConfig    = SourceConfig (sandboxDir </> "srcCacheDir")
     , tsCustomCabalArgs = ["--enable-documentation"
-                          ,"--docdir=" ++ pack (sandboxDir </> "docs" </> "$pkg" </> "$version")]
+                          ,"--docdir=" <> pack (sandboxDir </> "docs" </> "$pkg" </> "$version")]
     }

@@ -3,6 +3,7 @@
 module Scoutess.Service.Source.Dir (fetchDir, fetchVersionsDir) where
 
 import Control.Monad.Trans (MonadIO, liftIO)
+import Data.Monoid ((<>))
 import Data.Set (singleton)
 import Data.Text (pack)
 import Data.Version (showVersion)
@@ -14,15 +15,13 @@ import System.FilePath ((</>))
 import Scoutess.Core
 import Scoutess.Types
 
-import Prelude hiding ((++))
-
 fetchDir :: MonadIO m =>
             SourceConfig
          -> VersionInfo
          -> m (Either SourceException SourceInfo)
 fetchDir sourceConfig versionInfo = do
     let Dir oldPath  = viSourceLocation versionInfo
-        nameVersion  = viName versionInfo ++ "-" ++ showVersion (viVersion versionInfo)
+        nameVersion  = viName versionInfo <> "-" <> showVersion (viVersion versionInfo)
         newPath      = srcCacheDir sourceConfig </> nameVersion
     liftIO $ installDirectoryContents silent oldPath newPath
     return . Right $ SourceInfo newPath versionInfo
@@ -35,7 +34,7 @@ fetchVersionsDir sourceLocation = do
     mCabalFile <- liftIO $ findCabalFile filePath
     case mCabalFile of
         Nothing -> do
-            return . Left . SourceErrorOther $ "Could not find .cabal file in " ++ pack filePath
+            return . Left . SourceErrorOther $ "Could not find .cabal file in " <> pack filePath
         Just cabalFile -> do
             gpd <- liftIO $ readPackageDescription silent cabalFile
             let versionInfo = createVersionInfo sourceLocation cabalFile gpd

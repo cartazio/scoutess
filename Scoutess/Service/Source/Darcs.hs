@@ -20,8 +20,6 @@ import System.Process                        (readProcessWithExitCode)
 import Scoutess.Core
 import Scoutess.Types
 
-import Prelude hiding ((++))
-
 -- | fetch source using @darcs@
 fetchDarcs :: (MonadIO m) =>
               SourceConfig -- ^ 'SourceConfig'

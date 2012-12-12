@@ -56,12 +56,12 @@ type Component b = MaybeT (WriterT [Text] IO) (Bool, b)
 ---------------------------
 -- | A package that we've seen the cabal file of but not neccesarily fetched yet
 data VersionInfo = VersionInfo
-    { viCabalPath      :: FilePath                  -- ^ The parsed .cabal file
-    , viPackageIden    :: PackageIdentifier         -- ^ The package identifier
-    , viDependencies   :: [Dependency]              -- ^ Dependencies of the package
-    , viVersionTag     :: Text                      -- ^ If two packages have the same name and version,
+    { viCabalPath      :: !FilePath                  -- ^ The parsed .cabal file
+    , viPackageIden    :: !PackageIdentifier         -- ^ The package identifier
+--    , viDependencies   :: ![Dependency]              -- ^ Dependencies of the package
+    , viVersionTag     :: !Text                      -- ^ If two packages have the same name and version,
                                                     --   this is the tiebreaker
-    , viSourceLocation :: SourceLocation            -- ^ Where this package came from
+    , viSourceLocation :: !SourceLocation            -- ^ Where this package came from
     } deriving Show
 
 -- | Information about a package which has been fetched and is locally available now

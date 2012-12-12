@@ -14,8 +14,6 @@ import Scoutess.Types
 import Scoutess.Utils.Archives
 import Scoutess.Utils.Directory
 
-import Prelude hiding ((++))
-
 -- | generates a package index from a list of package archives
 generateIndex :: LocalHackage -- ^ directory that contains the packages
               -> FilePath     -- ^ filepath for the output package index

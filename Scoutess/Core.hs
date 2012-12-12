@@ -20,7 +20,7 @@ import System.FilePath.Find         (find, fileName, extension, (==?), depth)
 import Text.ParserCombinators.ReadP
 import Text.PrettyPrint
 
-import Prelude hiding ((++))
+-- import Prelude hiding ((++))
 
 import Distribution.Package
 import Distribution.PackageDescription
@@ -178,8 +178,8 @@ srcName = viName . siVersionInfo
 srcVersion :: SourceInfo -> Version
 srcVersion = viVersion . siVersionInfo
 
-srcDependencies :: SourceInfo -> [Dependency]
-srcDependencies = viDependencies . siVersionInfo
+-- srcDependencies :: SourceInfo -> [Dependency]
+-- srcDependencies = viDependencies . siVersionInfo
 
 -- | Finds a 'VersionInfo' for a package from a 'VersionSpec'
 
@@ -198,13 +198,14 @@ findVersion name version location vs = (fst <$>) . S.maxView . S.filter isTarget
 createVersionInfo :: SourceLocation -> FilePath -> GenericPackageDescription -> VersionInfo
 createVersionInfo sourceLocation cabalPath gpd = versionInfo
     where
-    name               = viName versionInfo
-    version            = showVersion (viVersion versionInfo)
+    packageIdent       = package $ packageDescription gpd
+    name               = let (PackageName n) = pkgName packageIdent in n
+    version            = pkgVersion packageIdent
     versionInfo        = VersionInfo
         { viCabalPath      = cabalPath
         , viPackageIden    = package $ packageDescription gpd
-        , viDependencies   = buildDepends $ packageDescription gpd
-        , viVersionTag     = T.pack (name ++ "-" ++ version)
+--        , viDependencies   = [] -- buildDepends $ packageDescription gpd
+        , viVersionTag     = T.pack (name ++ "-" ++ showVersion version)
         , viSourceLocation = sourceLocation}
 
 -- | looks for all .cabal files in the provided directory and its subdirectories
@@ -242,6 +243,3 @@ parseDependencies = safeInit . map fromJust . takeWhile isJust
             versions = readP_to_S parseVersion (T.unpack version)
         guard . not . null $ versions
         Just . PackageIdentifier name' . fst . last $ versions
-
-(++) :: Monoid xs => xs -> xs -> xs
-(++) = mappend
