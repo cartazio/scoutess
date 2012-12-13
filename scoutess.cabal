@@ -54,6 +54,7 @@ library
                      text         == 0.11.*,
                      transformers == 0.3.*,
                      zlib         == 0.5.*
+  ghc-options       : -O2
   if flag(old-time)
     cpp-options     : -DOLD_TIME
     build-depends   : old-time    == 1.1.*,
@@ -66,3 +67,4 @@ executable scoutess
   main-is        : Main.hs
   hs-source-dirs : ""
   build-depends  : base, containers, directory, filepath, scoutess, text
+  ghc-options    : -O2
