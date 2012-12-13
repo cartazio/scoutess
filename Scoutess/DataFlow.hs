@@ -116,6 +116,7 @@ produceBuildSpec = withComponent "produceBuildSpec" $ \(targetSpec, targetInfo, 
             ,"install"
             ,targetCabal
             ,"--package-db=clear"
+            ,"--package-db=global" -- THIS IS TEMPORARY! See <http://hackage.haskell.org/trac/ghc/ticket/5977>
             ,"--package-db=" <> sandboxDir
             ,"--dry-run"]
     (exitCode, stdOut, stdErr) <- liftIO $ readProcessWithExitCode "cabal" cabalArgs []
@@ -196,6 +197,7 @@ build = withComponent "build" $ \(buildSpec, targetSourceInfo, _) -> do
             ,"install"
             ,targetCabal
             ,"--package-db=clear"
+            ,"--package-db=global" -- THIS IS TEMPORARY TOO: <http://hackage.haskell.org/trac/ghc/ticket/5977>
             ,"--package-db=" <> sandboxDir
             ,"--prefix=" <> installDir
             ] <> map T.unpack (tsCustomCabalArgs targetSpec)
