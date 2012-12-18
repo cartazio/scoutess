@@ -34,18 +34,18 @@ List of ideas
 Figure out qualified imports
 ----------------------------
 
-13:18 < neutrino> you mention that scoutess can do automatic bounds discovery. it would be nice if it could also automatically turn unqualified imports into qualified ones. that is probably a completely separateble tool.
-13:18 < neutrino> "can do" when it's done that is
-13:22 < alpounet> you're maybe pushing it a bit too far, that's a bit out of scoutess' scope :P
-13:22 < alpounet> stylish-haskell and whatnot could do these stuffs
-13:27 < donri> hm i thought so too at first, but there may be a point to having scoutess do it before releasing
-13:27 < donri> like, it could use -ddump-minimal-imports when testing builds, and then for a working build it rewrites open imports to use known-working explicit imports
-13:28 < donri> that way we get to write open imports in the code, but for hackage installations people will be guaranteed to get the same imports scoutess got (which worked)
-13:29 < alpounet> hm.
-13:30 < neutrino> yeah, that's why i mention it's probably a completely separate tool
-13:30 < alpounet> if someone does write a tool that does exactly that, we certainly can offer an option in the config to do that, that would just call out to that program
-13:30 < neutrino> so: it is something that could integrate into scoutess, but not something that has to be provided by scoutess
-13:30 < donri> yea
+> 13:18 < neutrino> you mention that scoutess can do automatic bounds discovery. it would be nice if it could also automatically turn unqualified imports into qualified ones. that is probably a completely separateble tool.
+> 13:18 < neutrino> "can do" when it's done that is
+> 13:22 < alpounet> you're maybe pushing it a bit too far, that's a bit out of scoutess' scope :P
+> 13:22 < alpounet> stylish-haskell and whatnot could do these stuffs
+> 13:27 < donri> hm i thought so too at first, but there may be a point to having scoutess do it before releasing
+> 13:27 < donri> like, it could use -ddump-minimal-imports when testing builds, and then for a working build it rewrites open imports to use known-working explicit imports
+> 13:28 < donri> that way we get to write open imports in the code, but for hackage installations people will be guaranteed to get the same imports scoutess got (which worked)
+> 13:29 < alpounet> hm.
+> 13:30 < neutrino> yeah, that's why i mention it's probably a completely separate tool
+> 13:30 < alpounet> if someone does write a tool that does exactly that, we certainly can offer an option in the config to do that, that would just call out to that program
+> 13:30 < neutrino> so: it is something that could integrate into scoutess, but not something that has to be provided by scoutess
+> 13:30 < donri> yea
 
 Test builds on preconfigured virtual machines
 ---------------------------------------------
