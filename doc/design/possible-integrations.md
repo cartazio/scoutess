@@ -6,16 +6,21 @@ This document describes things which would go well with scoutess and which can e
 Which features belong here
 --------------------------
 
+
 There are several reasons to not implement features in scoutess. Some of them are:
+
 * keeping scoutess lean. concerns which are not central to scoutess do not belong in scoutess.
 * giving features a life of their own. A feature can grow and progress better if people can commit to it without having to commit to the whole of scoutess. This means things like adhering to coding standards and team policy, but it also means that it's much easier to commit to your own repository than it is to pull-merge-commit-push to someone else's project - the administrative overhead is much lower with small projects.
 * making the features more healthy, by letting them grow and learn from their mistakes on their own, rather than piggyback on top of a central project and become an indistinguishable speck on the map. If a feature is successful, others can use it too. If a feature dies off, it will not create dead code in scoutess.
 
+
 How to identify a feature which does not belong in scoutess, list (partial):
+
 * can the feature make sense on its own, outside of scoutess? If yes, then making it part of scoutess you are doing yourself and the users a disservice. Examples: a web front-end to managing your source code and viewing its documentation.
 * can the feature be implemented completely separate of scoutess? If yes, then there's no reason for it to be part of scoutess. Example: source code linting (HSLint, ghc-mod), building itself (cabal, cabal-dev)
 * does the feature operate only moderately on some data internal to scoutess? You probably want to implement your feature as a stand-alone with arguments or command-line switches. Example: if you want scoutess to deploy your built binaries, you can just make it run a deployment script after build.
 * does the feature operate mostly on data internal to scoutess? Consider asking scoutess for an API, or document export, which you can parse. Example: parsing scoutess logs to get email notifications of build errors.
+
 
 But other build servers do X!
 -----------------------------
