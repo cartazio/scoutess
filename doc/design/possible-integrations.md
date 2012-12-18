@@ -1,26 +1,26 @@
 Possible integrations
 =====================
 
-This document describes things which would go well with scoutress and which can enhance the workflow and usefulness of scoutress, but which will not be implemented in scoutress.
+This document describes things which would go well with scoutess and which can enhance the workflow and usefulness of scoutess, but which will not be implemented in scoutess.
 
 Which features belong here
 --------------------------
 
-There are several reasons to not implement features in scoutress. Some of them are:
-* keeping scoutress lean. concerns which are not central to scoutress do not belong in scoutress.
-* giving features a life of their own. A feature can grow and progress better if people can commit to it without having to commit to the whole of scoutress. This means things like adhering to coding standards and team policy, but it also means that it's much easier to commit to your own repository than it is to pull-merge-commit-push to someone else's project - the administrative overhead is much lower with small projects.
-* making the features more healthy, by letting them grow and learn from their mistakes on their own, rather than piggyback on top of a central project and become an indistinguishable speck on the map. If a feature is successful, others can use it too. If a feature dies off, it will not create dead code in scoutress.
+There are several reasons to not implement features in scoutess. Some of them are:
+* keeping scoutess lean. concerns which are not central to scoutess do not belong in scoutess.
+* giving features a life of their own. A feature can grow and progress better if people can commit to it without having to commit to the whole of scoutess. This means things like adhering to coding standards and team policy, but it also means that it's much easier to commit to your own repository than it is to pull-merge-commit-push to someone else's project - the administrative overhead is much lower with small projects.
+* making the features more healthy, by letting them grow and learn from their mistakes on their own, rather than piggyback on top of a central project and become an indistinguishable speck on the map. If a feature is successful, others can use it too. If a feature dies off, it will not create dead code in scoutess.
 
-How to identify a feature which does not belong in scoutress, list (partial):
-* can the feature make sense on its own, outside of scoutress? If yes, then making it part of scoutress you are doing yourself and the users a disservice. Examples: a web front-end to managing your source code and viewing its documentation.
-* can the feature be implemented completely separate of scoutress? If yes, then there's no reason for it to be part of scoutress. Example: source code linting (HSLint, ghc-mod), building itself (cabal, cabal-dev)
-* does the feature operate only moderately on some data internal to scoutress? You probably want to implement your feature as a stand-alone with arguments or command-line switches. Example: if you want scoutress to deploy your built binaries, you can just make it run a deployment script after build.
-* does the feature operate mostly on data internal to scoutress? Consider asking scoutress for an API, or document export, which you can parse. Example: parsing scoutress logs to get email notifications of build errors.
+How to identify a feature which does not belong in scoutess, list (partial):
+* can the feature make sense on its own, outside of scoutess? If yes, then making it part of scoutess you are doing yourself and the users a disservice. Examples: a web front-end to managing your source code and viewing its documentation.
+* can the feature be implemented completely separate of scoutess? If yes, then there's no reason for it to be part of scoutess. Example: source code linting (HSLint, ghc-mod), building itself (cabal, cabal-dev)
+* does the feature operate only moderately on some data internal to scoutess? You probably want to implement your feature as a stand-alone with arguments or command-line switches. Example: if you want scoutess to deploy your built binaries, you can just make it run a deployment script after build.
+* does the feature operate mostly on data internal to scoutess? Consider asking scoutess for an API, or document export, which you can parse. Example: parsing scoutess logs to get email notifications of build errors.
 
 But other build servers do X!
 -----------------------------
 
-A lot of build servers were made in the IDE Boom era. They have been made into huge, kludgy mudslides of code that try to check every box possible. Computational power increase in general-purpose systems that happened in the 90s gave developers too much power, and so they ended up building Huge Things. Since the 90s, a lot has changed in the popular mindset about how to develop software. Modularity and interchangeability, lightweight apis and composability are some lessons that were hard to learn. If you look at your favourite build server, chances are that features that are internal to it belong in here - as separate tools that are external to scoutress. Use conventions like file system structures rather than explicit passing around of parameters to make the interaction layer between scoutress and your tool easier. Use loose-coupling communication like socket files, message passing (rabbitmq comes to mind), document databases, rather than things which rely on scoutress being installed in the first place. Example: don't make your tool depend on some SQL table which is installed and written to by scoutress only; make it optional.
+A lot of build servers were made in the IDE Boom era. They have been made into huge, kludgy mudslides of code that try to check every box possible. Computational power increase in general-purpose systems that happened in the 90s gave developers too much power, and so they ended up building Huge Things. Since the 90s, a lot has changed in the popular mindset about how to develop software. Modularity and interchangeability, lightweight apis and composability are some lessons that were hard to learn. If you look at your favourite build server, chances are that features that are internal to it belong in here - as separate tools that are external to scoutess. Use conventions like file system structures rather than explicit passing around of parameters to make the interaction layer between scoutess and your tool easier. Use loose-coupling communication like socket files, message passing (rabbitmq comes to mind), document databases, rather than things which rely on scoutess being installed in the first place. Example: don't make your tool depend on some SQL table which is installed and written to by scoutess only; make it optional.
 
 
 List of ideas
@@ -45,36 +45,36 @@ Figure out qualified imports
 Test builds on preconfigured virtual machines
 ---------------------------------------------
 
-Have several images predefined, and have scoutress run inside that vm and see if things build. This way you can always see if your production servers will be able to build from scratch and/or build from their current checkpoint.
+Have several images predefined, and have scoutess run inside that vm and see if things build. This way you can always see if your production servers will be able to build from scratch and/or build from their current checkpoint.
 
-Have scoutress deploy code to production via continuous deployment
+Have scoutess deploy code to production via continuous deployment
 ------------------------------------------------------------------
 
-Scoutress builds the program, and then runs a script which queues up the deployment with some sort of continuous deployment daemon.
+Scoutess builds the program, and then runs a script which queues up the deployment with some sort of continuous deployment daemon.
 
 
-Have scoutress build debs (or rpms or msi's) of my program
+Have scoutess build debs (or rpms or msi's) of my program
 ----------------------------------------------------------
 
-Scoutress builds a package, but builds it under a chroot or checkinstall or something similar, in order to obtain a binary package that can be installed on any other computer.
+Scoutess builds a package, but builds it under a chroot or checkinstall or something similar, in order to obtain a binary package that can be installed on any other computer.
 
-Have scoutress report build failures via email, sms (phone texting), twitter, or a bot on a channel
+Have scoutess report build failures via email, sms (phone texting), twitter, or a bot on a channel
 ---------------------------------------------------------------------------------------------------
 
-Scoutress builds a package, then sends the log and build status to a bot which does the rest.
+Scoutess builds a package, then sends the log and build status to a bot which does the rest.
 
 
-Have scoutress bisect builds to figure out when they started breaking
+Have scoutess bisect builds to figure out when they started breaking
 ---------------------------------------------------------------------
 
-Scoutress builds a package and it fails. It notifies an external daemon about this. This daemon looks at the build parameters, and looks at the known-good builds of a package, and then gives scoutress commands to build the same package with different build parameters (including revision id of the source being built). Scoutress records the validity of every build in some database anyways, and the daemon uses this information to perform further bisection steps. Once the daemon has found the breakage boundary, it is done bisecting. The database is retained by scoutress and now it knows when something started breaking.
+Scoutess builds a package and it fails. It notifies an external daemon about this. This daemon looks at the build parameters, and looks at the known-good builds of a package, and then gives scoutess commands to build the same package with different build parameters (including revision id of the source being built). Scoutess records the validity of every build in some database anyways, and the daemon uses this information to perform further bisection steps. Once the daemon has found the breakage boundary, it is done bisecting. The database is retained by scoutess and now it knows when something started breaking.
 
-Have scoutress cache Hackage
+Have scoutess cache Hackage
 ----------------------------
 
-Hackage is down every now and then, and when it's down it is gone for a day or so. If I need to do an urgent rollout, and can't access the packages, that's disastrous for my business. Scoutress should include a cache of all the packages which are required. Actually not sure if this one belongs in a separate tool, or if it's something that should make it into scoutress "after the first release".
+Hackage is down every now and then, and when it's down it is gone for a day or so. If I need to do an urgent rollout, and can't access the packages, that's disastrous for my business. Scoutess should include a cache of all the packages which are required. Actually not sure if this one belongs in a separate tool, or if it's something that should make it into scoutess "after the first release".
 
-Have scoutress cache Hackage Haddocks
+Have scoutess cache Hackage Haddocks
 -------------------------------------
 
-Hackage is down every now and then, and when it's down it is gone for a day or so. If I have to make an urgent bug fix, and can't access the documentation, that's terrible. Scoutress could very well be able to notify a daemon of what packages I am currently using, and in what versions, and this daemon could, among others, make sure I have a server somewhere with the haddocks available.
+Hackage is down every now and then, and when it's down it is gone for a day or so. If I have to make an urgent bug fix, and can't access the documentation, that's terrible. Scoutess could very well be able to notify a daemon of what packages I am currently using, and in what versions, and this daemon could, among others, make sure I have a server somewhere with the haddocks available.
