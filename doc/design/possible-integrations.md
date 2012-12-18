@@ -73,7 +73,7 @@ Figure out qualified imports
 Test builds on preconfigured virtual machines
 ---------------------------------------------
 
-Have several images predefined, and have scoutess run inside that vm and see if things build. This way you can always see if your production servers will be able to build from scratch and/or build from their current checkpoint.
+Have several images predefined, and have scoutess run inside that vm and see if things build. This way you can always see if your production servers will be able to build from scratch and/or build from their current checkpoint. This includes builds on the "fresh haskell platform install" scenario, and also the "current state of the prod servers" scenario.
 
 Have scoutess deploy code to production via continuous deployment
 ------------------------------------------------------------------
