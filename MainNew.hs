@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Arrows, OverloadedStrings #-}
 
 module Main where
 
@@ -18,6 +18,29 @@ import Scoutess.Core
 import Scoutess.DataFlow
 import Scoutess.Types
 
+happstackSourceSpec :: SourceSpec
+happstackSourceSpec = SourceSpec
+    { ssLocations = fromList [Hackage]
+    }
+
+happstackTargetSpec :: TargetSpec
+happstackTargetSpec = TargetSpec
+    { tsName   = "happstack"
+    , tsTmpDir = "_scoutess-build"
+    , tsGhcPath = "/opt/ghc-7.6.3/bin/ghc"
+    , tsTargets = fromList [ Target { tName = "happstack-server"
+                                    , tVersion = Nothing
+                                    , tLocation = Nothing
+                                    }
+                           ]
+    }
+
+main :: IO ()
+main =
+    do result <- runScoutess (standard id id) (happstackSourceSpec, happstackTargetSpec, Nothing)
+       putStrLn (ppScoutessResult result)
+
+{-
 -- TODO: we need a real source of options and better (any) support for command line flags.
 main :: IO ()
 main = getArgs >>= \args -> case args of
@@ -65,3 +88,4 @@ makeTargetSpec name version location sandboxDir = TargetSpec
     , tsCustomCabalArgs = ["--enable-documentation"
                           ,"--docdir=" <> pack (sandboxDir </> "docs" </> "$pkg" </> "$version")]
     }
+-}

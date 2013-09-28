@@ -31,6 +31,7 @@ import Data.Text                 (Text, pack)
 import Distribution.Package
 import Distribution.PackageDescription
 import Distribution.Simple.LocalBuildInfo (LocalBuildInfo)
+import System.FilePath           ((</>))
 
 --------------------
 -- Scoutess arrow --
@@ -118,7 +119,7 @@ instance Monoid VersionSpec where
 
 -- | The finalised sources of the build
 data BuildSources = BuildSources
-    { targetSource :: SourceInfo   -- ^ The source for the target
+    { targetSource :: [SourceInfo]   -- ^ The source for the target
     , depSources   :: [SourceInfo] -- ^ The sources for the dependencies (in reverse topological order)
     }
     deriving Show
@@ -159,22 +160,64 @@ instance Exception SourceException
 --   extract the fields we need instead.
 data BuildSpec = BuildSpec
     { bsTargetSpec    :: TargetSpec     -- ^ input to scoutess
-    , bsTargetInfo    :: VersionInfo    -- ^ information about the target package
+    , bsTargetInfo    :: [VersionInfo]  -- ^ information about the target package
     , bsDependencies  :: [VersionInfo]  -- ^ in reverse topological order
     , bsToBuild       :: Bool           -- ^ is there a build needed?
     }
     deriving Show
 
--- | The initial input to scoutess. A bit of a mess.
 data TargetSpec = TargetSpec
-    { tsName            :: Text           -- ^ the name of the target package
-    , tsVersion         :: Text           -- ^ the version of the target package
-    , tsLocation        :: SourceLocation -- ^ the 'SourceLocation' of the target package
-    , tsTmpDir          :: FilePath       -- ^ a directory that scoutess will put temporary files in
-    , tsLocalHackage    :: LocalHackage   -- ^ the local hackage repo
-    , tsPackageDB       :: FilePath       -- ^ the directory to be used as a package-db
-    , tsSourceConfig    :: SourceConfig   -- ^ the directory to unpack things from repos in
-    , tsCustomCabalArgs :: [Text]         -- ^ any additional arguments to pass to cabal
+    { tsName    :: String
+    , tsTargets :: Set Target
+    , tsTmpDir  :: FilePath
+    , tsGhcPath :: FilePath
+    }
+    deriving Show
+
+-- | The initial input to scoutess. A bit of a mess.
+data Target = Target
+    { tName            :: Text           -- ^ the name of the target package
+    , tVersion         :: Maybe Text     -- ^ the version of the target package
+    , tLocation        :: Maybe SourceLocation
+--    , tseLocation        :: SourceLocation -- ^ the 'SourceLocation' of the target package
+--    , tseTmpDir          :: FilePath       -- ^ a directory that scoutess will put temporary files in
+--    , tseLocalHackage    :: LocalHackage   -- ^ the local hackage repo
+--    , tsePackageDB       :: FilePath       -- ^ the directory to be used as a package-db
+--    , tseSourceConfig    :: SourceConfig   -- ^ the directory to unpack things from repos in
+--    , tseCustomCabalArgs :: [Text]         -- ^ any additional arguments to pass to cabal
+    }
+    deriving (Eq, Ord, Show)
+
+data Locations = Locations
+    { lTmpDir       :: FilePath
+    , lLocalHackage :: LocalHackage
+    , lPackageDB    :: FilePath
+    , lSandboxDir   :: FilePath
+    , lSourceConfig :: SourceConfig
+    , lGhcPath      :: FilePath
+    }
+    deriving Show
+
+mkLocations :: FilePath -> FilePath -> Locations
+mkLocations tmpDir ghcPath = Locations
+    { lTmpDir       = tmpDir
+    , lLocalHackage = LocalHackage (tmpDir </> "localHackage") (tmpDir </> "localHackage" </> "temp")
+    , lPackageDB    = tmpDir </> "package-cache"
+    , lSandboxDir   = tmpDir </> "cabal-sandbox"
+    , lSourceConfig = SourceConfig (tmpDir </> "srcCacheDir")
+    , lGhcPath      = ghcPath
+    }
+
+-- | The initial input to scoutess. A bit of a mess.
+data TargetSpecExt = TargetSpecExt
+    { tseName            :: Text           -- ^ the name of the target package
+    , tseVersion         :: Text           -- ^ the version of the target package
+    , tseLocation        :: SourceLocation -- ^ the 'SourceLocation' of the target package
+    , tseTmpDir          :: FilePath       -- ^ a directory that scoutess will put temporary files in
+    , tseLocalHackage    :: LocalHackage   -- ^ the local hackage repo
+    , tsePackageDB       :: FilePath       -- ^ the directory to be used as a package-db
+    , tseSourceConfig    :: SourceConfig   -- ^ the directory to unpack things from repos in
+    , tseCustomCabalArgs :: [Text]         -- ^ any additional arguments to pass to cabal
     }
     deriving Show
 
@@ -188,7 +231,7 @@ data ComponentReport = ComponentReport
 -- TODO: should we just have a link to the LocalBuildInfo?
 data BuildReport = BuildReport
     { brBuildSpec      :: BuildSpec
-    , brLocalBuildInfo :: LocalBuildInfo
+    , brLocalBuildInfo :: [LocalBuildInfo]
     }
     deriving Show
 

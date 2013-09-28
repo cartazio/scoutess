@@ -8,7 +8,8 @@ import Control.Monad.Error
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 import Control.Monad.Writer
-import Data.Maybe                    (fromJust, fromMaybe, isNothing)
+import Data.Either                   (partitionEithers)
+import Data.Maybe                    (catMaybes, fromJust, fromMaybe, isNothing)
 import Data.Monoid
 import qualified Data.Set as S
 import Data.Text (Text)
@@ -29,28 +30,32 @@ import Distribution.Simple.Configure (getPersistBuildConfig)
 standard :: Scoutess SourceSpec SourceSpec    -- ^ sourceFilter
          -> Scoutess VersionSpec VersionSpec  -- ^ versionFilter
          -> Scoutess (SourceSpec, TargetSpec, Maybe PriorRun) BuildReport
-standard sourceFilter versionFilter = proc (sourceSpec, targetSpec, mPriorRun) -> do
-    initialiseSandbox                                   -< targetSpec
-    (availableVersions, targetVersion)
-                       <- fetchVersionSpec sourceFilter -< (targetSpec, sourceSpec)
+standard sourceFilter versionFilter =
+    proc (sourceSpec, targetSpec, mPriorRun) -> do
+    let locations = mkLocations (tsTmpDir targetSpec) (tsGhcPath targetSpec)
+    initializeSandbox                                   -< (targetSpec, locations)
+    availableVersions  <- fetchVersionSpec sourceFilter -< (sourceSpec, locations)
     consideredVersions <- versionFilter                 -< availableVersions
-    buildSpec          <- produceBuildSpec              -< (targetSpec, targetVersion, consideredVersions, mPriorRun)
-    buildSources       <- getSources                    -< buildSpec
-    index              <- updateLocalHackage            -< (buildSpec, buildSources)
-    build                                               -< (buildSpec, targetSource buildSources, index)
+    buildSpec          <- produceBuildSpec              -< (targetSpec, consideredVersions, mPriorRun, locations)
+    buildSources       <- getSources                    -< (buildSpec, locations)
+    index              <- updateLocalHackage            -< (buildSpec, buildSources, locations)
+    buildReport        <- build                         -< (buildSpec, targetSource buildSources, index, locations)
+--    ()                 <- haddock                       -< (buildSpec, targetSource buildSources, index, locations)
+    returnA            -< buildReport
 
 -- | Clear the local hackage, ensure that the temp directory exists and is empty, and create an empty packageDB.
-initialiseSandbox :: Scoutess TargetSpec ()
-initialiseSandbox = withComponent "initialise" $ \targetSpec -> do
-    liftIO $ clearLocalHackage (tsLocalHackage targetSpec)
+initializeSandbox :: Scoutess (TargetSpec, Locations) ()
+initializeSandbox = withComponent "initialize" $ \(targetSpec, locations) -> do
+    liftIO $ clearLocalHackage (lLocalHackage locations)
 
-    let emptyDirs = [tsTmpDir targetSpec]
+    let emptyDirs = [] -- [lTmpDir locations]
     forM_ emptyDirs $ \filePath -> liftIO $ do
         dirExists <- doesDirectoryExist filePath
         when dirExists $ removeDirectoryRecursive filePath
         createDirectoryIfMissing True filePath
 
-    let packageDB = tsPackageDB targetSpec
+{-
+    let packageDB = lPackageDB locations
     packageDBExists <- liftIO $ doesDirectoryExist packageDB
     when packageDBExists $ liftIO (removeDirectoryRecursive packageDB)
     (exitCode, out, err) <- liftIO $ readProcessWithExitCode "ghc-pkg" ["init", packageDB] []
@@ -59,72 +64,78 @@ initialiseSandbox = withComponent "initialise" $ \targetSpec -> do
         , "ExitCode:", T.pack (show exitCode)
         , "StdOut:"  , T.pack out
         , "StdErr:"  , T.pack err])
+-}
+    let sandboxDir = lSandboxDir locations
+    (exitCode, out, err) <- liftIO $ readProcessWithExitCode "cabal" ["sandbox", "init", "--sandbox", sandboxDir] []
+    report (T.unlines
+        [ "Calling ghc-pkg init returned:"
+        , "ExitCode:", T.pack (show exitCode)
+        , "StdOut:"  , T.pack out
+        , "StdErr:"  , T.pack err
+        ])
     componentFinish (exitCode == ExitSuccess) ()
+--    when (exitCode /= ExitSuccess) componentFatal
+
+
 
 -- | Fetch the available versions from the 'SourceSpec', take the target's 'VersionInfo'
 --   and then return the filtered set in a 'VersionSpec'
-fetchVersionSpec :: Scoutess SourceSpec SourceSpec -> Scoutess (TargetSpec, SourceSpec) (VersionSpec, VersionInfo)
-fetchVersionSpec sourceFilter = withComponent "fetchVersionSpec" $ \(targetSpec, sourceSpec) -> do
-    let name     = tsName targetSpec
-        version  = tsVersion targetSpec
-        location = tsLocation targetSpec
+fetchVersionSpec :: Scoutess SourceSpec SourceSpec -> Scoutess (SourceSpec, Locations) VersionSpec
+fetchVersionSpec sourceFilter = withComponent "fetchVersionSpec" $ \(sourceSpec, locations) -> do
     filteredSources <- fst <$> (liftIO (runScoutess sourceFilter sourceSpec))
     when (isNothing filteredSources) $ do
         report "The sourceFilter failed"
         mzero
     let filteredSources'        = S.toList . ssLocations . fromJust $ filteredSources
-    (exceptions, versionSpecs) <- liftIO $ fetchVersions (tsSourceConfig targetSpec) filteredSources'
+    (exceptions, versionSpecs) <- liftIO $ fetchVersions (lSourceConfig locations) filteredSources'
     let combined = mconcat versionSpecs
         versionsErr = case exceptions of
             [] -> ""
             _  -> "Fetching the versions gave these exceptions: " <> T.unlines (map sourceErrorMsg exceptions)
     report versionsErr
+    return (True, combined)
 
-    -- eTargetVersions represents the locations we look for the target package in
-    eTargetVersions <- if location `elem` filteredSources'
-        then return (Right combined)
-        else if location `elem` S.toList (ssLocations sourceSpec)
-            then liftIO $ fetchVersion (tsSourceConfig targetSpec) location
-            else return . Left $ strMsg "The target's location wasn't in the SourceSpec" -- TODO: replace this with a more helpful error message
-    -- attempt to find the target package in eTargetVersions, dealing with errors
-    either (reportFetchFail versionsErr) (reportOnFind versionsErr combined . findVersion name version location) eTargetVersions
+findTargets :: VersionSpec -> TargetSpec -> [Maybe VersionInfo]
+findTargets versionSpec targetSpec =
+    map findTarget (S.toList $ tsTargets targetSpec)
     where
-    -- can't fetch the versions from the location where the target is meant to be
-    reportFetchFail versionsErr targetErr = do
-        report $ T.pack ("Error when fetching the versions from the target's location: " <> show targetErr)
-        mzero
-    -- could fetch the versions but can't find the target in them
-    reportOnFind versionsErr _ Nothing = do
-        report "The target wasn't found in the source locations."
-        mzero
-    -- could fetch the versions and found the target
-    reportOnFind versionsErr combined (Just targetVersion) = componentPass (combined, targetVersion)
+      findTarget :: Target -> Maybe VersionInfo
+      findTarget target =
+          findVersion (tName target) (tVersion target) (tLocation target) versionSpec
 
 -- | Given the packages we can build from, ask cabal install to work out the dependency graph for us
 --   by creating a package index for all fetchable versions (even though we don't actually have
 --   any of the sources yet).
-produceBuildSpec :: Scoutess (TargetSpec, VersionInfo, VersionSpec, Maybe PriorRun) BuildSpec
-produceBuildSpec = withComponent "produceBuildSpec" $ \(targetSpec, targetInfo, versionSpec, mPriorRun) -> do
-    let configFile  = tsTmpDir targetSpec </> "config"
-        sandboxDir  = tsPackageDB targetSpec
-        fakeRepo    = tsTmpDir targetSpec </> "fakeRepo"
+produceBuildSpec :: Scoutess (TargetSpec, VersionSpec, Maybe PriorRun, Locations) BuildSpec
+produceBuildSpec = withComponent "produceBuildSpec" $ \(targetSpec, versionSpec, mPriorRun, locations) -> do
+    let configFile  = lTmpDir locations </> "config"
+        sandboxDir  = lPackageDB locations
+        fakeRepo    = lTmpDir locations </> "fakeRepo"
+        ghcPath     = lGhcPath locations
     liftIO $ createPackageIndexWith const versionSpec fakeRepo -- XXX: 'const' will just pick packages with the highest SourceLocation
     liftIO $ writeFile configFile ("local-repo: " <> fakeRepo)
-    targetCabal <- liftIO $ writeCabal (tsTmpDir targetSpec) targetInfo
+    let versionInfos = catMaybes $ findTargets versionSpec targetSpec -- XXX: shouldn't just discard failures
+    targetCabals <- liftIO $ mapM (writeCabal (lTmpDir locations)) versionInfos
+
+
     let cabalArgs =
-            ["--config-file=" <> configFile
-            ,"install"
-            ,targetCabal
-            ,"--package-db=clear"
-            ,"--package-db=global" -- THIS IS TEMPORARY! See <http://hackage.haskell.org/trac/ghc/ticket/5977>
-            ,"--package-db=" <> sandboxDir
-            ,"--dry-run"]
+            [-- "--config-file=" <> configFile
+              "-v"
+            , "--package-db=clear"
+            , "--with-compiler=" <> ghcPath
+--            ,"--package-db=global" -- THIS IS TEMPORARY! See <http://hackage.haskell.org/trac/ghc/ticket/5977>
+--            ,"--package-db=" <> sandboxDir
+            , "--dry-run"
+            , "install"] ++
+            targetCabals
     (exitCode, stdOut, stdErr) <- liftIO $ readProcessWithExitCode "cabal" cabalArgs []
     let deps        = parseDependencies stdOut `findIn` (vsVersions versionSpec)
         -- TODO: we still need to build if we need to produce docs (What about checking for up-to-date docs?)
+{-
         toBuild' pr = not (prTarget pr == targetInfo
                       && S.toList (prDependencies pr) == deps)
         toBuild     = maybe True toBuild' mPriorRun
+-}
         output      = T.pack $ unlines [ "Calling cabal install --dry-run returned:"
                                        , "ExitCode:", show exitCode, "StdOut:", stdOut, "StdErr:", stdErr]
         success     = exitCode == ExitSuccess
@@ -132,67 +143,129 @@ produceBuildSpec = withComponent "produceBuildSpec" $ \(targetSpec, targetInfo, 
     guard success
     componentPass $ BuildSpec
         { bsTargetSpec   = targetSpec
-        , bsTargetInfo   = targetInfo
+        , bsTargetInfo   = versionInfos
         , bsDependencies = deps
-        , bsToBuild      = toBuild }
+        , bsToBuild      = True } -- FIXME: calculate if we really need to run
 
 -- | Fetch the sources for the target and its dependencies
-getSources :: Scoutess BuildSpec BuildSources
-getSources = withComponent "getSources" $ \buildSpec -> do
-    let sourceConfig      = tsSourceConfig (bsTargetSpec buildSpec)
-        depVersionInfos   = bsDependencies buildSpec
-        targetVersionInfo = bsTargetInfo buildSpec
-    eTargetSource <- fetchSrc sourceConfig targetVersionInfo
+getSources :: Scoutess (BuildSpec, Locations) BuildSources
+getSources = withComponent "getSources" $ \(buildSpec, locations) -> do
+    let sourceConfig       = lSourceConfig locations
+        depVersionInfos    = bsDependencies buildSpec
+        targetVersionInfos = bsTargetInfo buildSpec
+{-
+    eTargetSources <- mapM (fetchSrc sourceConfig) targetVersionInfos
     when (isLeft eTargetSource) $ do
         report $ "Unable to fetch the target source with error:\n" <> sourceErrorMsg (fromLeft eTargetSource)
         mzero
     let targetSource' = fromRight eTargetSource
+-}
+    (exceptions', targetSources) <- fetchSrcs sourceConfig targetVersionInfos
     (exceptions, depSources') <- fetchSrcs sourceConfig depVersionInfos
     let depSourceReport = case exceptions of
           [] -> ""
           _  -> "fetching the sources gave these exceptions:\n" <> T.unlines (map sourceErrorMsg exceptions)
     report depSourceReport
-    componentPass $ BuildSources targetSource' depSources'
+    componentPass $ BuildSources targetSources depSources'
     where
     isLeft    (Left  _) = True
     isLeft    _         = False
     fromLeft  (Left  l) = l
     fromRight (Right r) = r
 
+
 -- | Add all the sources to the local hackage index specified by the buildSpec
-updateLocalHackage :: Scoutess (BuildSpec, BuildSources) LocalHackageIndex
-updateLocalHackage = withComponent "updateLocalHackage" $ \(buildSpec, buildSources) -> do
-    let localHackage = tsLocalHackage (bsTargetSpec buildSpec)
+updateLocalHackage :: Scoutess (BuildSpec, BuildSources, Locations) LocalHackageIndex
+updateLocalHackage = withComponent "updateLocalHackage" $ \(buildSpec, buildSources, locations) -> do
+    let localHackage = lLocalHackage locations
+        tmpDir       = lTmpDir locations
         indexPath    = tmpDir </> "00-index.tar"
-        tmpDir       = tsTmpDir (bsTargetSpec buildSpec)
-        allSources   = targetSource buildSources : depSources buildSources
+        allSources   = targetSource buildSources ++ depSources buildSources
     liftIO $ addPackages allSources localHackage
     index <- liftIO $ generateIndexSelectively (Just (map siVersionInfo allSources)) localHackage indexPath
     componentPass index
 
 -- | Given a directive of what to build and the location of the target package,
 --   call /cabal install/
-build :: Scoutess (BuildSpec, SourceInfo, LocalHackageIndex) BuildReport
-build = withComponent "build" $ \(buildSpec, targetSourceInfo, _) -> do
+build :: Scoutess (BuildSpec, [SourceInfo], LocalHackageIndex, Locations) BuildReport
+build = withComponent "build" $ \(buildSpec, targetSourceInfos, _, locations) -> do
     let targetSpec            = bsTargetSpec buildSpec
-        sandboxDir            = tsPackageDB targetSpec
+        sandboxDir            = lPackageDB locations
+        installDir            = sandboxDir
+        configFile            = lTmpDir locations </> "config"
+--        logLocation           = lTmpDir locations </> "cabal-sandbox" </> "logs" </> "build.log"
+        targetSourcePaths     = map siPath targetSourceInfos
+
+    mTargetCabals <- liftIO $ mapM findCabalFile targetSourcePaths
+    when (any isNothing mTargetCabals) $ do
+        report $ "Couldn't find the target's cabal file in: " -- FIXME <> T.pack targetSourcePath
+        mzero
+
+    let targetCabals = catMaybes mTargetCabals
+    configExists <- liftIO $ doesFileExist configFile
+    when configExists (liftIO $ removeFile configFile)
+
+    liftIO . writeFile configFile $ unlines
+        [ "local-repo: " <> hackageDir (lLocalHackage locations)
+        ] -- , "build-summary: " <> logLocation ]
+    let cabalArgs =
+            [-- "--config-file=" <> configFile
+--            ,"--package-db=clear"
+--            ,"--package-db=global" -- THIS IS TEMPORARY TOO: <http://hackage.haskell.org/trac/ghc/ticket/5977>
+--            ,"--package-db=" <> sandboxDir
+--            ,"--prefix=" <> installDir
+              "-v"
+            , "--package-db=clear"
+            , "--with-compiler=" <> (lGhcPath locations)
+            ,"install"
+            ] ++ targetCabals
+-- <> map T.unpack (tsCustomCabalArgs targetSpec)
+    (exitCode, out, err) <- liftIO $ readProcessWithExitCode "cabal" cabalArgs []
+    let output = T.pack $ unlines [ "Calling cabal install returned:"
+                                    , "ExitCode:", show exitCode, "StdOut:", out, "StdErr:", err]
+    report output
+--    logExists <- liftIO $ doesFileExist logLocation
+    -- TODO: do we need the log if we have the LocalBuildInfo?
+{-
+    cabalLog <- if logExists
+        then lift . lift $ readFile logLocation
+        else do
+            report $ "The log file was not found (but should have been) at " <> T.pack logLocation
+            return ""
+-}
+    guard (exitCode == ExitSuccess)
+    -- FIXME: this is failing because the sandbox puts things in a different path
+--    localBuildInfos <- liftIO $ mapM (\targetSourcePath -> getPersistBuildConfig (targetSourcePath </> "dist")) targetSourcePaths
+    componentPass $ BuildReport buildSpec [] -- localBuildInfos
+
+-- | Given a directive of what to build and the location of the target package,
+--   call /cabal install/
+haddock :: Scoutess (BuildSpec, [SourceInfo], LocalHackageIndex, Locations) ()
+haddock = withComponent "haddock-standalone" $ \(buildSpec, targetSourceInfos, _, locations) -> do
+    let targetSpec            = bsTargetSpec buildSpec
+        sandboxDir            = lPackageDB locations
         installDir            = sandboxDir
         configFile            = tsTmpDir targetSpec </> "config"
-        logLocation           = tsTmpDir targetSpec </> "build.log"
-        targetSourcePath      = siPath targetSourceInfo
-
-    mTargetCabal <- liftIO $ findCabalFile targetSourcePath
+--        logLocation           = tsTmpDir targetSpec </> "cabal-sandbox" </> "logs" </> "build.log"
+        targetSourcePaths     = map siPath targetSourceInfos
+{-
+    mTargetCabals <- liftIO $ mapM findCabalFile targetSourcePaths
     when (isNothing mTargetCabal) $ do
         report $ "Couldn't find the target's cabal file in: " <> T.pack targetSourcePath
         mzero
     let targetCabal = fromJust mTargetCabal
     configExists <- liftIO $ doesFileExist configFile
     when configExists (liftIO $ removeFile configFile)
-
+-}
     liftIO . writeFile configFile $ unlines
-        [ "local-repo: " <> hackageDir (tsLocalHackage (bsTargetSpec buildSpec))
-        , "build-summary: " <> logLocation ]
-    let cabalArgs =
+        [ "local-repo: " <> hackageDir (lLocalHackage locations)
+        ]
+--        , "build-summary: " <> logLocation ]
+
+    let args = [ "--package-db=" <> "_scoutess-build/cabal-sandbox/x86_64-linux-ghc-7.6.3-packages.conf.d"
+               , "-o", "doc-html"
+               ] ++ targetSourcePaths
+{-
             ["--config-file=" <> configFile
             ,"install"
             ,targetCabal
@@ -201,10 +274,14 @@ build = withComponent "build" $ \(buildSpec, targetSourceInfo, _) -> do
             ,"--package-db=" <> sandboxDir
             ,"--prefix=" <> installDir
             ] <> map T.unpack (tsCustomCabalArgs targetSpec)
-    (exitCode, out, err) <- liftIO $ readProcessWithExitCode "cabal" cabalArgs []
-    let output = T.pack $ unlines [ "Calling cabal install returned:"
+
+-}
+    report $ mconcat $ map T.pack ("standalone-standalone":args)
+    (exitCode, out, err) <- liftIO $ readProcessWithExitCode "standalone-haddock" args []
+    let output = T.pack $ unlines [ "Calling standalone-haddock returned:"
                                     , "ExitCode:", show exitCode, "StdOut:", out, "StdErr:", err]
     report output
+{-
     logExists <- liftIO $ doesFileExist logLocation
     -- TODO: do we need the log if we have the LocalBuildInfo?
     cabalLog <- if logExists
@@ -213,6 +290,9 @@ build = withComponent "build" $ \(buildSpec, targetSourceInfo, _) -> do
             report $ "The log file was not found (but should have been) at " <> T.pack logLocation
             return ""
     guard (exitCode == ExitSuccess)
-    localBuildInfo <- liftIO $ getPersistBuildConfig (targetSourcePath </> "dist")
-    componentPass $ BuildReport buildSpec localBuildInfo
+-}
+--    localBuildInfos <- liftIO $ mapM (\targetSourcePath -> getPersistBuildConfig (targetSourcePath </> "dist")) targetSourcePaths
+    componentPass ()
+
+
 

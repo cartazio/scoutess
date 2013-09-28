@@ -9,16 +9,18 @@ import Control.Monad.Writer hiding ((<>))
 import Data.List                    (isPrefixOf)
 import qualified Data.Map as M
 import Data.Maybe                   (mapMaybe, isJust, fromJust)
+import Data.Monoid                  ((<>))
 import Data.Set                     (Set)
 import qualified Data.Set as S
 import Data.Text                    (Text)
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import Data.Version                 (parseVersion, showVersion)
 import System.Directory             (createDirectoryIfMissing)
 import System.FilePath              ((</>), (<.>))
 import System.FilePath.Find         (find, fileName, extension, (==?), depth)
 import Text.ParserCombinators.ReadP
-import Text.PrettyPrint
+import Text.PrettyPrint             hiding ((<>))
 
 -- import Prelude hiding ((++))
 
@@ -47,8 +49,11 @@ ppScoutessResult (mBuildReport, reports) = renderStyle (style{lineLength = 80}) 
     pBReport = case mBuildReport of
         Nothing     -> text "Scoutess failed with these component reports:"
         Just report -> text "Scoutess successfully built"
-                   <+> text (brName report) <> text "-" <> text (showVersion (brVersion report))
+--                   <+> text (brName report) <> text "-" <> text (showVersion (brVersion report))
+                   <+> pVersionInfos (bsTargetInfo $ brBuildSpec report)
                    <+> text "with these component reports:"
+    pVersionInfos vis = vcat $ map pVersionInfo vis
+    pVersionInfo vi = text  (viName vi) <> text "-" <> text (showVersion $ viVersion vi)
     pCReports = sep (map ppComponentReport reports)
     ppComponentReport :: ComponentReport -> Doc
     ppComponentReport (ComponentReport name success extra)
@@ -60,8 +65,14 @@ ppScoutessResult (mBuildReport, reports) = renderStyle (style{lineLength = 80}) 
 -- Components --
 ----------------
 withComponent :: Text -> (a -> Component b) -> Scoutess a b
-withComponent name action = liftScoutess ((extractReportValue =<<) . (lift . lift . runWriterT . runMaybeT . action))
+withComponent name action =
+    liftScoutess ((extractReportValue =<<) . (lift . lift . runWriterT . runMaybeT . (label action)))
     where
+    label action = \a ->
+        do report $ name <> " begin."
+           b <- action a
+           report $ name <> " end."
+           return b
     extractReportValue :: (Maybe (Bool, b), [Text]) -> Scoutess' b
     extractReportValue (Nothing, cLog)               = do
         tell [ComponentReport name False (T.unlines cLog)]
@@ -71,7 +82,10 @@ withComponent name action = liftScoutess ((extractReportValue =<<) . (lift . lif
         return value
 
 report :: Text -> Component ()
-report text = tell [text] >> componentPass ()
+report text =
+    do liftIO $ T.putStrLn text
+       tell [text]
+       componentPass ()
 
 componentPass, componentFail :: a -> Component a
 componentPass value = return (True, value)
@@ -119,13 +133,13 @@ writeCabal dir versionInfo = do
 
 findIn :: [PackageIdentifier] -> Set VersionInfo -> [VersionInfo]
 findIn pkgIdens vis = mapMaybe (\pkgIden -> fst <$> S.maxView (S.filter ((pkgIden ==) . viPackageIden) vis)) pkgIdens
-
+{-
 brName :: BuildReport -> String
 brName = viName . bsTargetInfo . brBuildSpec
 
 brVersion :: BuildReport -> Version
 brVersion = viVersion . bsTargetInfo . brBuildSpec
-
+-}
 -----------
 -- Other --
 -----------
@@ -134,7 +148,7 @@ sourceErrorMsg :: SourceException -- ^ error
                -> Text            -- ^ error message
 sourceErrorMsg (SourceErrorOther txt) = txt
 sourceErrorMsg (SourceErrorUnknown)   = "unknown source error"
-
+{-
 toPriorRun :: BuildReport -> PriorRun
 toPriorRun br = PriorRun (bsTargetInfo buildSpec) (S.fromList (bsDependencies buildSpec))
     where buildSpec = brBuildSpec br
@@ -158,7 +172,7 @@ noDifference :: BuildReport -> PriorRun -> Bool
 noDifference br pr = case findDifference br pr of
     Just (diff1, diff2) | S.null diff1 && S.null diff2 -> True
     _                                                  -> False
-
+-}
 ----------------------
 -- Helper functions --
 ----------------------
@@ -184,16 +198,20 @@ srcVersion = viVersion . siVersionInfo
 -- | Finds a 'VersionInfo' for a package from a 'VersionSpec'
 
 findVersion :: Text           -- ^ package name
-            -> Text           -- ^ package version
-            -> SourceLocation -- ^ package location
+            -> Maybe Text           -- ^ package version
+            -> Maybe SourceLocation -- ^ package location
             -> VersionSpec    -- ^ VersionSpec to search in
             -> Maybe VersionInfo
-findVersion name version location vs = (fst <$>) . S.maxView . S.filter isTarget . vsVersions $ vs
+findVersion name mversion mlocation vs = (fst <$>) . S.maxView . S.filter isTarget . vsVersions $ vs
     where
     isTarget vi =
         T.unpack name == viName vi &&
-        T.unpack version == showVersion (viVersion vi) &&
-        location == viSourceLocation vi
+        (case mversion of
+           (Just version) -> T.unpack version == showVersion (viVersion vi)
+           Nothing        -> True)  &&
+        (case mlocation of
+           (Just location) -> location == viSourceLocation vi
+           Nothing -> True)
 
 createVersionInfo :: SourceLocation -> FilePath -> GenericPackageDescription -> VersionInfo
 createVersionInfo sourceLocation cabalPath gpd = versionInfo
